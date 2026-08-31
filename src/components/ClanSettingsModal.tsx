@@ -1,3 +1,4 @@
+// verified: quick switch template removed
 import React, { useState } from 'react';
 import { 
   X, 
