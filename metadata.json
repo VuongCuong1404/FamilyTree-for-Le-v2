@@ -1,0 +1,6 @@
+{
+  "name": "Gia Phả Dòng Họ Lê",
+  "description": "Cổng thông tin và cây phả hệ trực tuyến dòng họ Lê: tra cứu danh bạ, sơ đồ phả hệ các đời, lịch giỗ chạp và kết nối con cháu muôn nơi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

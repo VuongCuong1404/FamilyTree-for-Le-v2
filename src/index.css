@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  h1, h2, h3, .font-serif-clan {
+    font-family: 'Noto Serif', 'Times New Roman', Georgia, serif;
+  }
+
+  .font-display-title {
+    font-family: 'Cinzel', 'Noto Serif', serif;
+  }
+}
+
+/* Traditional Vietnamese Paper Texture & Gold Ornament Accents */
+.bg-parchment {
+  background-color: #faf7f2;
+  background-image: radial-gradient(#e5dfd3 0.75px, transparent 0.75px);
+  background-size: 16px 16px;
+}
+
+.bg-wood-dark {
+  background-color: #24140e;
+  background-image: linear-gradient(135deg, #1c0e09 0%, #2e1a12 50%, #1c0e09 100%);
+}
+
+.bg-crimson-clan {
+  background-color: #78101b;
+  background-image: linear-gradient(135deg, #640d16 0%, #851320 50%, #640d16 100%);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1ede4;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4af37;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b8860b;
+}
+
+/* Clan Seal stamp animation */
+.seal-shadow {
+  box-shadow: 0 4px 20px -2px rgba(180, 20, 20, 0.25);
+}
+
+.gold-glow {
+  box-shadow: 0 0 25px rgba(212, 175, 55, 0.2);
+}
+
+/* Family Tree Chart Customization */
+.f3 {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.f3 svg.main_svg {
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+}
+
+.f3 svg.main_svg:active {
+  cursor: grabbing;
+}
+
+.f3 .link {
+  stroke: #92400e !important;
+  stroke-width: 2.5px !important;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.75;
+}
+
+.f3 .f3-nav-cont {
+  display: none !important;
+}
+
