@@ -11,9 +11,11 @@ import {
   Briefcase, 
   Award,
   Layers,
-  Sparkles
+  Sparkles,
+  Plus,
+  Trash2
 } from 'lucide-react';
-import { ClanMember, Gender } from '../types';
+import { ClanMember, Gender, SpouseInfo } from '../types';
 import { calculateAgeInfo, getGenderVisuals } from '../utils/genealogyUtils';
 
 interface AddEditMemberModalProps {
@@ -45,7 +47,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
   const [lunarDeathDate, setLunarDeathDate] = useState('');
   const [parentId, setParentId] = useState<string | null>(null);
   const [motherName, setMotherName] = useState('');
-  const [spouse, setSpouse] = useState('');
+  const [spouseList, setSpouseList] = useState<SpouseInfo[]>([]);
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [occupation, setOccupation] = useState('');
@@ -71,7 +73,16 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setLunarDeathDate(memberToEdit.lunarDeathDate || '');
       setParentId(memberToEdit.parentId || null);
       setMotherName(memberToEdit.motherName || '');
-      setSpouse(memberToEdit.spouse || '');
+      
+      // Load spouseList or fallback to single spouse
+      if (memberToEdit.spouseList && Array.isArray(memberToEdit.spouseList) && memberToEdit.spouseList.length > 0) {
+        setSpouseList(memberToEdit.spouseList.map(s => ({ ...s })));
+      } else if (memberToEdit.spouse && memberToEdit.spouse.trim()) {
+        setSpouseList([{ name: memberToEdit.spouse.trim(), note: 'Chính thất' }]);
+      } else {
+        setSpouseList([]);
+      }
+
       setPhone(memberToEdit.phone || '');
       setAddress(memberToEdit.address || '');
       setOccupation(memberToEdit.occupation || '');
@@ -91,8 +102,8 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setIsAlive(true);
       setLunarDeathDate('');
       setParentId(parentToAssign.id);
-      setMotherName(parentToAssign.spouse || '');
-      setSpouse('');
+      setMotherName(parentToAssign.spouse || (parentToAssign.spouseList?.[0]?.name) || '');
+      setSpouseList([]);
       setPhone('');
       setAddress(parentToAssign.address || '');
       setOccupation('');
@@ -112,7 +123,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setLunarDeathDate('');
       setParentId(null);
       setMotherName('');
-      setSpouse('');
+      setSpouseList([]);
       setPhone('');
       setAddress('');
       setOccupation('');
@@ -122,6 +133,24 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
     }
   }, [memberToEdit, parentToAssign, isOpen, allMembers]);
 
+  const handleAddSpouse = () => {
+    setSpouseList(prev => [
+      ...prev,
+      {
+        name: '',
+        note: prev.length === 0 ? 'Chính thất' : 'Kế thất',
+      }
+    ]);
+  };
+
+  const handleRemoveSpouse = (index: number) => {
+    setSpouseList(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateSpouse = (index: number, field: keyof SpouseInfo, val: any) => {
+    setSpouseList(prev => prev.map((s, i) => i === index ? { ...s, [field]: val } : s));
+  };
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -130,6 +159,24 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
 
     const achievementsList = achievements.split(',').map(s => s.trim()).filter(Boolean);
     const parsedOrder = orderInFamily.trim() !== '' ? Number(orderInFamily) : undefined;
+
+    // Filter valid spouse items with non-empty name
+    const validSpouseList = spouseList
+      .map(s => ({
+        name: s.name.trim(),
+        note: s.note?.trim() || undefined,
+        birthYear: s.birthYear,
+        deathYear: s.deathYear,
+        isAlive: s.isAlive,
+        lunarDeathDate: s.lunarDeathDate,
+        restingPlace: s.restingPlace,
+        hometown: s.hometown,
+      }))
+      .filter(s => s.name.length > 0);
+
+    const primarySpouseString = validSpouseList.length > 0
+      ? validSpouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ')
+      : undefined;
 
     const newMember: ClanMember = {
       id: memberToEdit ? memberToEdit.id : `mem_${Date.now()}`,
@@ -145,8 +192,8 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       lunarDeathDate: !isAlive && lunarDeathDate.trim() ? lunarDeathDate.trim() : undefined,
       parentId: parentId || null,
       motherName: motherName.trim() || undefined,
-      spouse: spouse.trim() || undefined,
-      spouseList: memberToEdit?.spouseList,
+      spouse: primarySpouseString,
+      spouseList: validSpouseList.length > 0 ? validSpouseList : undefined,
       phone: phone.trim() || undefined,
       email: memberToEdit?.email,
       address: address.trim() || undefined,
@@ -302,28 +349,98 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             </select>
           </div>
 
-          {/* Row 4: Mother and Spouse */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-stone-700 font-bold mb-1">Thân mẫu (Mẹ):</label>
-              <input
-                type="text"
-                value={motherName}
-                onChange={(e) => setMotherName(e.target.value)}
-                placeholder="Ví dụ: Bà Hoàng Thị Minh Châu"
-                className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none"
-              />
+          {/* Row 4: Mother Name */}
+          <div>
+            <label className="block text-stone-700 font-bold mb-1">Thân mẫu (Mẹ đẻ):</label>
+            <input
+              type="text"
+              value={motherName}
+              onChange={(e) => setMotherName(e.target.value)}
+              placeholder="Ví dụ: Bà Hoàng Thị Minh Châu"
+              className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none focus:border-amber-600 font-medium"
+            />
+          </div>
+
+          {/* Row 5: Dynamic Spouses List */}
+          <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/90 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-stone-900 font-bold flex items-center gap-1.5 text-xs">
+                <Heart className="w-4 h-4 text-rose-500 fill-rose-500/20" />
+                <span>Danh sách Phối ngẫu (Vợ / Chồng):</span>
+                {spouseList.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-200 text-amber-950 text-[10px] font-bold">
+                    {spouseList.length}
+                  </span>
+                )}
+              </label>
+
+              <button
+                type="button"
+                onClick={handleAddSpouse}
+                className="px-2.5 py-1 rounded-lg bg-amber-800 hover:bg-amber-900 text-amber-50 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all shadow-xs hover:scale-105"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Thêm vợ/chồng</span>
+              </button>
             </div>
-            <div>
-              <label className="block text-stone-700 font-bold mb-1">Phối ngẫu (Vợ / Chồng):</label>
-              <input
-                type="text"
-                value={spouse}
-                onChange={(e) => setSpouse(e.target.value)}
-                placeholder="Ví dụ: Bà Trần Thị Mai"
-                className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none"
-              />
-            </div>
+
+            {spouseList.length === 0 ? (
+              <div className="text-center py-3 text-stone-500 text-xs border border-dashed border-amber-300/80 rounded-xl bg-white/70">
+                <span>Chưa có phối ngẫu. Bấm </span>
+                <button
+                  type="button"
+                  onClick={handleAddSpouse}
+                  className="font-bold text-amber-800 hover:underline cursor-pointer inline-flex items-center gap-0.5"
+                >
+                  <span>+ Thêm vợ/chồng</span>
+                </button>
+                <span> để thêm thông tin.</span>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {spouseList.map((sp, idx) => (
+                  <div 
+                    key={idx} 
+                    className="p-2.5 rounded-xl bg-white border border-amber-200 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
+                  >
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-semibold text-stone-500 mb-0.5 sm:hidden">
+                        Họ tên phối ngẫu {idx + 1}:
+                      </label>
+                      <input
+                        type="text"
+                        value={sp.name}
+                        onChange={(e) => handleUpdateSpouse(idx, 'name', e.target.value)}
+                        placeholder={`Họ tên vợ/chồng ${idx + 1} (VD: Bà Trần Thị Mai)...`}
+                        className="w-full px-3 py-2 rounded-lg bg-stone-50 border border-stone-300 text-stone-900 text-xs font-semibold focus:outline-none focus:border-amber-600"
+                      />
+                    </div>
+
+                    <div className="w-full sm:w-44">
+                      <label className="block text-[10px] font-semibold text-stone-500 mb-0.5 sm:hidden">
+                        Ghi chú danh phận:
+                      </label>
+                      <input
+                        type="text"
+                        value={sp.note || ''}
+                        onChange={(e) => handleUpdateSpouse(idx, 'note', e.target.value)}
+                        placeholder="Ghi chú (Chính thất, Kế thất...)"
+                        className="w-full px-3 py-2 rounded-lg bg-stone-50 border border-stone-300 text-stone-800 text-xs focus:outline-none focus:border-amber-600"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSpouse(idx)}
+                      className="p-2 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors self-end sm:self-center cursor-pointer shrink-0"
+                      title="Xóa phối ngẫu này"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Row 5: Living Status, Birth Year, Death Year */}

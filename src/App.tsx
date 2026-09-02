@@ -364,6 +364,7 @@ export default function App() {
             onSelectMember={(m) => setSelectedMember(m)}
             onOpenZalo={() => setIsZaloOpen(true)}
             currentUserProfile={currentUserProfile}
+            currentUserRole={currentUserRole}
             onOpenAuth={() => setIsAuthOpen(true)}
           />
         )}

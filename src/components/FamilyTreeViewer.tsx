@@ -227,9 +227,11 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   const isMatchSearch = (m: ClanMember) => {
     if (!searchQuery.trim()) return false;
     const q = searchQuery.toLowerCase();
+    const matchSpouseList = m.spouseList && m.spouseList.some(s => s.name?.toLowerCase().includes(q));
     return (
       m.fullName.toLowerCase().includes(q) ||
       (m.spouse && m.spouse.toLowerCase().includes(q)) ||
+      Boolean(matchSpouseList) ||
       (m.title && m.title.toLowerCase().includes(q)) ||
       (m.occupation && m.occupation.toLowerCase().includes(q))
     );
@@ -266,12 +268,16 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       ? 'bg-white border-amber-900/25 hover:border-amber-600 hover:shadow-xl'
       : 'bg-[#faf8f5] border-stone-300/90 hover:border-amber-700 hover:shadow-xl';
 
-    const spouseHtml = showSpouses && (member.spouse || (member.spouseList && member.spouseList.length > 0))
+    const formattedSpouses = member.spouseList && member.spouseList.length > 0
+      ? member.spouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ')
+      : (member.spouse || '');
+
+    const spouseHtml = showSpouses && formattedSpouses
       ? `<div class="mt-2 pt-1.5 border-t border-stone-200/70 text-[11px] flex items-center gap-1 text-stone-700 bg-stone-50/90 -mx-3.5 -mb-3.5 p-2 rounded-b-2xl">
           <span class="text-rose-500 font-bold shrink-0 text-xs">♥</span>
           <span class="text-[10px] text-stone-500 font-medium shrink-0">Phối ngẫu:</span>
-          <span class="font-semibold text-stone-800 text-[11px] truncate">
-            ${escapeHtml(member.spouse || member.spouseList?.map(s => s.name).join(', ') || '')}
+          <span class="font-semibold text-stone-800 text-[11px] truncate" title="${escapeHtml(formattedSpouses)}">
+            ${escapeHtml(formattedSpouses)}
           </span>
         </div>`
       : '';
@@ -451,9 +457,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         throw new Error('Không tìm thấy vùng hiển thị cây phả hệ.');
       }
 
-      // 4. Dynamic import html2canvas và jsPDF chỉ khi người dùng bấm xuất PDF
+      // 4. Dynamic import html2canvas-pro và jsPDF chỉ khi người dùng bấm xuất PDF
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
+        import('html2canvas-pro'),
         import('jspdf')
       ]);
 
@@ -1020,10 +1026,14 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                                 {ageInfo.formattedText}
                               </div>
 
-                              {member.spouse && (
+                              {((member.spouseList && member.spouseList.length > 0) || member.spouse) && (
                                 <div className="text-xs text-stone-500 mt-1 truncate flex items-center gap-1">
                                   <Heart className="w-3 h-3 text-rose-500 shrink-0" />
-                                  <span>Phối ngẫu: {member.spouse}</span>
+                                  <span title={member.spouseList && member.spouseList.length > 0 ? member.spouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ') : member.spouse}>
+                                    Phối ngẫu: {member.spouseList && member.spouseList.length > 0
+                                      ? member.spouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ')
+                                      : member.spouse}
+                                  </span>
                                 </div>
                               )}
 

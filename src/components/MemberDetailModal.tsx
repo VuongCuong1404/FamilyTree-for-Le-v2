@@ -198,9 +198,25 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
             {/* Spouse info */}
             <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200">
               <span className="text-stone-400 font-medium block mb-1">Phối ngẫu (Vợ / Chồng):</span>
-              <span className="font-bold text-stone-900 text-sm">
-                {member.spouse || (member.spouseList && member.spouseList.length > 0 ? member.spouseList.map(s => s.name).join(', ') : 'Chưa có thông tin')}
-              </span>
+              {member.spouseList && member.spouseList.length > 0 ? (
+                <div className="space-y-1.5">
+                  {member.spouseList.map((sp, sIdx) => (
+                    <div key={sIdx} className="flex flex-wrap items-center gap-1.5 text-sm">
+                      <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20 shrink-0" />
+                      <span className="font-bold text-stone-900">{sp.name}</span>
+                      {sp.note && (
+                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                          {sp.note}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="font-bold text-stone-900 text-sm">
+                  {member.spouse || 'Chưa có thông tin'}
+                </span>
+              )}
             </div>
 
             {/* Contact Phone */}

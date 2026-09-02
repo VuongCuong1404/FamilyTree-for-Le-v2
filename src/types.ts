@@ -106,6 +106,7 @@ export interface SpouseInfo {
   lunarDeathDate?: string;
   restingPlace?: string;
   hometown?: string;
+  note?: string; // e.g. "Chính thất", "Kế thất", "Bà hai", etc.
 }
 
 export interface ClanMember {

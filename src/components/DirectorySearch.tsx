@@ -20,7 +20,7 @@ import {
   Lock,
   LogIn
 } from 'lucide-react';
-import { ClanMember, ClanInfo, Gender, UserProfile } from '../types';
+import { ClanMember, ClanInfo, Gender, UserProfile, Role } from '../types';
 import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder } from '../utils/genealogyUtils';
 
 interface DirectorySearchProps {
@@ -29,6 +29,7 @@ interface DirectorySearchProps {
   onSelectMember: (member: ClanMember) => void;
   onOpenZalo: () => void;
   currentUserProfile?: UserProfile | null;
+  currentUserRole?: Role;
   onOpenAuth?: () => void;
 }
 
@@ -38,6 +39,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   onSelectMember,
   onOpenZalo,
   currentUserProfile,
+  currentUserRole,
   onOpenAuth,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,6 +48,8 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   const [genFilter, setGenFilter] = useState<number | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'alive' | 'deceased'>('all');
   const [locationFilter, setLocationFilter] = useState('all');
+
+  const isAdmin = currentUserRole === 'admin' || currentUserProfile?.role === 'admin';
 
   const stats = useMemo(() => calculateClanStats(members), [members]);
 
@@ -207,13 +211,16 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={exportCSV}
-              className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 border border-amber-900/60 text-xs font-semibold flex items-center gap-1.5 shadow-sm"
-            >
-              <Download className="w-4 h-4 text-amber-400" />
-              <span>Xuất File CSV / Excel</span>
-            </button>
+            {isAdmin && (
+              <button
+                onClick={exportCSV}
+                className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 border border-amber-900/60 text-xs font-semibold flex items-center gap-1.5 shadow-sm cursor-pointer transition-all hover:scale-105"
+                title="Tải bảng danh bạ dòng họ về máy tính dạng tệp CSV / Excel"
+              >
+                <Download className="w-4 h-4 text-amber-400" />
+                <span>Xuất File CSV / Excel</span>
+              </button>
+            )}
 
             <button
               onClick={onOpenZalo}
