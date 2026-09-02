@@ -74,7 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
             <span className="font-serif-clan tracking-wider hidden sm:inline text-amber-300">
-              Gia Phả {clanInfo.clanSurname} Tộc:
+              Gia Phả {clanInfo.clanSurname.toUpperCase()} TỘC:
             </span>
             <span className="text-amber-200/90 font-medium italic">"{clanInfo.subTitle}"</span>
           </div>
@@ -163,7 +163,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Gia Phả Nội Tộc
               </div>
               <div className="text-base sm:text-xl font-bold tracking-tight text-white font-serif-clan group-hover:text-amber-300 transition-colors">
-                {clanInfo.clanSurname} Tộc
+                {clanInfo.clanSurname.toUpperCase()} TỘC
               </div>
             </div>
           </div>

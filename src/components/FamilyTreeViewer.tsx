@@ -11,14 +11,15 @@ import {
   Users, 
   Layers, 
   Heart, 
-  Printer, 
   Maximize2,
   Calendar,
   Flame,
   Lock,
-  LogIn
+  LogIn,
+  FileDown,
+  Loader2
 } from 'lucide-react';
-import { ClanMember, ClanInfo, UserProfile } from '../types';
+import { ClanMember, ClanInfo, UserProfile, Role } from '../types';
 import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder } from '../utils/genealogyUtils';
 
 interface FamilyTreeViewerProps {
@@ -27,6 +28,7 @@ interface FamilyTreeViewerProps {
   onSelectMember: (member: ClanMember) => void;
   onAddChild: (parentMember: ClanMember) => void;
   currentUserProfile?: UserProfile | null;
+  currentUserRole?: Role;
   onOpenAuth?: () => void;
 }
 
@@ -144,6 +146,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   onSelectMember,
   onAddChild,
   currentUserProfile,
+  currentUserRole,
   onOpenAuth,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -152,12 +155,15 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [showSpouses, setShowSpouses] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<'tree' | 'generation_list'>('tree');
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth >= 768;
     }
     return true;
   });
+
+  const isAdmin = currentUserRole === 'admin' || currentUserProfile?.role === 'admin';
 
   // Floating Gesture Hint: only shown once per browser and auto-dismissed after 4s
   const [showGestureHint, setShowGestureHint] = useState<boolean>(() => {
@@ -419,6 +425,128 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     }
   };
 
+  const handleExportPdf = async () => {
+    if (isExportingPdf) return;
+    setIsExportingPdf(true);
+
+    try {
+      // 1. Tự động chuyển cây về chế độ hiện toàn bộ và xóa các bộ lọc
+      setSelectedBranch('all');
+      setSelectedGenFilter('all');
+      setSearchQuery('');
+      setGenderFilter('all');
+      setViewMode('tree');
+
+      // 2. Chờ React re-render và DOM tree cập nhật
+      await new Promise((resolve) => setTimeout(resolve, 450));
+
+      // 3. Reset zoom & fit toàn bộ cây
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 350));
+
+      const chartCont = chartContainerRef.current;
+      if (!chartCont) {
+        throw new Error('Không tìm thấy vùng hiển thị cây phả hệ.');
+      }
+
+      // 4. Dynamic import html2canvas và jsPDF chỉ khi người dùng bấm xuất PDF
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf')
+      ]);
+
+      // 5. Chụp bằng html2canvas với scale: 2.5 và useCORS: true
+      const canvas = await html2canvas(chartCont, {
+        scale: 2.5,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#faf7f2',
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+      // 6. Tính kích thước trang PDF theo đúng kích thước thật của cây đã chụp
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+
+      // Quy đổi px sang pt (point tiêu chuẩn PDF)
+      const ptPerPx = 72 / (96 * 2.5);
+      const contentWidthPt = canvasWidth * ptPerPx;
+      const contentHeightPt = canvasHeight * ptPerPx;
+
+      const marginPt = 24;
+      const headerHeightPt = 68;
+
+      const pdfWidth = contentWidthPt + (marginPt * 2);
+      const pdfHeight = contentHeightPt + headerHeightPt + (marginPt * 2);
+
+      const orientation = pdfWidth >= pdfHeight ? 'landscape' : 'portrait';
+
+      const pdf = new jsPDF({
+        orientation,
+        unit: 'pt',
+        format: [pdfWidth, pdfHeight]
+      });
+
+      // Vẽ nền tiêu đề trên đầu trang
+      pdf.setFillColor(28, 14, 9); // #1c0e09
+      pdf.rect(0, 0, pdfWidth, headerHeightPt + marginPt, 'F');
+
+      // Đường viền vàng đồng phong cách hoàng gia/truyền thống
+      pdf.setDrawColor(217, 119, 6); // Amber-600
+      pdf.setLineWidth(2.5);
+      pdf.line(0, headerHeightPt + marginPt, pdfWidth, headerHeightPt + marginPt);
+
+      // Tiêu đề đầu trang "GIA PHẢ NỘI TỘC - {TÊN HỌ VIẾT HOA}"
+      const clanUpper = clanInfo.clanSurname.toUpperCase();
+      pdf.setTextColor(254, 243, 199); // Amber-100
+      pdf.setFontSize(20);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`GIA PHẢ NỘI TỘC - ${clanUpper} TỘC`, marginPt + 10, marginPt + 24);
+
+      // Ngày xuất bản & Thông tin tổng quan
+      const today = new Date();
+      const day = String(today.getDate()).padStart(2, '0');
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const year = today.getFullYear();
+      const formattedDate = `${day}/${month}/${year}`;
+
+      pdf.setTextColor(214, 211, 209); // Stone-300
+      pdf.setFontSize(10.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(
+        `Ngày xuất bản: ${formattedDate}  |  Tổng số: ${members.length} thành viên  |  "${clanInfo.subTitle || 'Uống nước nhớ nguồn - Vạn thuở lưu danh'}"`,
+        marginPt + 10,
+        marginPt + 45
+      );
+
+      // Chèn hình ảnh cây phả hệ độ phân giải cao
+      pdf.addImage(
+        imgData,
+        'JPEG',
+        marginPt,
+        headerHeightPt + marginPt + 8,
+        contentWidthPt,
+        contentHeightPt
+      );
+
+      // 7. Đặt tên file tải về dạng: Gia_Pha_{Ten_Ho}_Toan_Bo_{ngày}.pdf
+      const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
+      const dateForFile = `${day}_${month}_${year}`;
+      const fileName = `Gia_Pha_${sanitizedSurname}_Toan_Bo_${dateForFile}.pdf`;
+
+      pdf.save(fileName);
+    } catch (err: any) {
+      console.error('Lỗi khi xuất PDF phả hệ:', err);
+      alert('Không thể xuất file PDF: ' + (err.message || 'Vui lòng thử lại.'));
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   if (!currentUserProfile) {
     return (
       <div className="min-h-[75vh] bg-stone-100 flex items-center justify-center p-4 sm:p-6">
@@ -516,16 +644,28 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 </button>
               </div>
 
-              {/* Print / Export on Desktop */}
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 border border-amber-900/50 text-xs font-semibold cursor-pointer"
-                title="In cây phả hệ"
-              >
-                <Printer className="w-3.5 h-3.5 text-amber-400" />
-                <span>In Bản Phả Hệ</span>
-              </button>
+              {/* PDF Export Button: ONLY shown when currentUserRole === 'admin' */}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={handleExportPdf}
+                  disabled={isExportingPdf}
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 text-amber-100 border border-amber-500/60 text-xs font-bold shadow-md hover:shadow-lg transition-all hover:scale-105 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Xuất toàn bộ cây phả hệ độ phân giải cao ra tệp PDF"
+                >
+                  {isExportingPdf ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 text-amber-300 animate-spin" />
+                      <span>Đang tạo PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileDown className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Xuất Bản PDF</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
 
           </div>

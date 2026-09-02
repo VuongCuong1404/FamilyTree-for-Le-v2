@@ -352,6 +352,7 @@ export default function App() {
             onSelectMember={(m) => setSelectedMember(m)}
             onAddChild={(parent) => handleOpenAddChild(parent)}
             currentUserProfile={currentUserProfile}
+            currentUserRole={currentUserRole}
             onOpenAuth={() => setIsAuthOpen(true)}
           />
         )}
