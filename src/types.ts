@@ -40,6 +40,7 @@ export interface SupabaseMemberRow {
   resting_place?: string | null;
   spouse?: string | null;
   spouse_list?: any | null;
+  spouse_ids?: string[] | null;
   achievements?: string[] | any | null;
   bio?: string | null;
   created_at?: string;
@@ -126,6 +127,7 @@ export interface ClanMember {
   motherName?: string;
   spouse?: string; // Quick name
   spouseList?: SpouseInfo[];
+  spouseIds?: string[];
   phone?: string;
   email?: string;
   address?: string;

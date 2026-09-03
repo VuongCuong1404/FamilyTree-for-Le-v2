@@ -56,6 +56,19 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
     return member.parentId ? allMembers.find(m => m.id === member.parentId) : null;
   }, [member, allMembers]);
 
+  // Find Mother
+  const mother = useMemo(() => {
+    return member.motherId ? allMembers.find(m => m.id === member.motherId) : null;
+  }, [member, allMembers]);
+
+  // Find Linked Spouses
+  const linkedSpouseMembers = useMemo(() => {
+    const direct = member.spouseIds || [];
+    const reverse = allMembers.filter(m => m.id !== member.id && m.spouseIds?.includes(member.id)).map(m => m.id);
+    const combined = Array.from(new Set([...direct, ...reverse]));
+    return combined.map(id => allMembers.find(m => m.id === id)).filter((m): m is ClanMember => Boolean(m));
+  }, [member, allMembers]);
+
   // Find Children
   const children = useMemo(() => {
     return allMembers.filter(m => m.parentId === member.id);
@@ -195,10 +208,48 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
               )}
             </div>
 
+            {/* Mother info */}
+            <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200">
+              <span className="text-stone-400 font-medium block mb-1">Thân mẫu (Mẹ):</span>
+              {mother ? (
+                <button
+                  onClick={() => onSelectMember(mother)}
+                  className="font-bold text-stone-900 hover:text-amber-800 flex items-center gap-1 text-sm text-left group"
+                >
+                  <span>{mother.fullName}</span>
+                  <span className="text-xs text-stone-500 font-normal">({mother.title || `Đời ${mother.generation}`})</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+              ) : member.motherName ? (
+                <span className="font-bold text-stone-900 text-sm">{member.motherName}</span>
+              ) : (
+                <span className="text-stone-500 italic text-sm">Chưa có thông tin</span>
+              )}
+            </div>
+
             {/* Spouse info */}
             <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200">
               <span className="text-stone-400 font-medium block mb-1">Phối ngẫu (Vợ / Chồng):</span>
-              {member.spouseList && member.spouseList.length > 0 ? (
+              {linkedSpouseMembers.length > 0 ? (
+                <div className="space-y-2">
+                  {linkedSpouseMembers.map((spMem, sIdx) => (
+                    <button
+                      key={spMem.id}
+                      onClick={() => onSelectMember(spMem)}
+                      className="w-full text-left font-bold text-stone-900 hover:text-amber-800 flex items-center justify-between gap-1 text-sm group p-1.5 rounded-xl bg-white border border-stone-200/80 hover:border-amber-400 shadow-2xs transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20 shrink-0" />
+                        <span className="truncate">{spMem.fullName}</span>
+                        <span className="text-xs text-stone-500 font-normal shrink-0">
+                          (Đời {spMem.generation} • {spMem.branch})
+                        </span>
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              ) : member.spouseList && member.spouseList.length > 0 ? (
                 <div className="space-y-1.5">
                   {member.spouseList.map((sp, sIdx) => (
                     <div key={sIdx} className="flex flex-wrap items-center gap-1.5 text-sm">

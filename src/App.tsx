@@ -152,25 +152,35 @@ export default function App() {
 
   // Handler to add or edit member
   const handleSaveMember = async (member: ClanMember) => {
-    const res = await saveMemberService(member, currentUserRole);
+    const res = await saveMemberService(member, currentUserRole, members);
     if (!res.success) {
       alert(res.error || 'Lỗi lưu dữ liệu lên Supabase. Vui lòng kiểm tra quyền hạn.');
       return;
     }
 
     const savedMember = res.member;
+    const updatedSpouses = res.updatedSpouses || [];
 
     setMembers(prev => {
-      const existsIndex = prev.findIndex(m => m.id === savedMember.id || m.id === member.id);
+      let list = [...prev];
+      const existsIndex = list.findIndex(m => m.id === savedMember.id || m.id === member.id);
       if (existsIndex >= 0) {
-        const updated = [...prev];
-        updated[existsIndex] = savedMember;
+        list[existsIndex] = savedMember;
         showToast(`Đã cập nhật thông tin thành viên "${savedMember.fullName}" thành công!`);
-        return updated;
       } else {
+        list.push(savedMember);
         showToast(`Đã thêm thành viên "${savedMember.fullName}" vào gia phả!`);
-        return [...prev, savedMember];
       }
+
+      // Symmetrically update spouses in state
+      updatedSpouses.forEach(sp => {
+        const spIdx = list.findIndex(m => m.id === sp.id);
+        if (spIdx >= 0) {
+          list[spIdx] = sp;
+        }
+      });
+
+      return list;
     });
 
     if (selectedMember && (selectedMember.id === member.id || selectedMember.id === savedMember.id)) {

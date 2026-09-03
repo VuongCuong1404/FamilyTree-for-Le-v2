@@ -70,6 +70,23 @@ export function mapRowToClanMember(row: SupabaseMemberRow | any): ClanMember {
     }
   }
 
+  // Parse spouse_ids from DB (UUID[], array, or JSON string)
+  let spouseIds: string[] | undefined = undefined;
+  if (row.spouse_ids) {
+    if (Array.isArray(row.spouse_ids)) {
+      spouseIds = row.spouse_ids.map((id: any) => String(id)).filter(Boolean);
+    } else if (typeof row.spouse_ids === 'string') {
+      try {
+        const parsed = JSON.parse(row.spouse_ids);
+        if (Array.isArray(parsed)) spouseIds = parsed.map((id: any) => String(id)).filter(Boolean);
+      } catch {
+        spouseIds = row.spouse_ids.replace(/[{}]/g, '').split(',').map((s: string) => s.trim()).filter(Boolean);
+      }
+    }
+  } else if (Array.isArray(row.spouseIds)) {
+    spouseIds = row.spouseIds.map((id: any) => String(id)).filter(Boolean);
+  }
+
   return {
     id: String(row.id),
     userId: row.user_id || row.userId || undefined,
@@ -90,6 +107,7 @@ export function mapRowToClanMember(row: SupabaseMemberRow | any): ClanMember {
       : (row.orderInFamily !== undefined && row.orderInFamily !== null ? Number(row.orderInFamily) : undefined),
     spouse: row.spouse || undefined,
     spouseList: spouseList || (Array.isArray(row.spouseList) ? row.spouseList : undefined),
+    spouseIds: spouseIds && spouseIds.length > 0 ? spouseIds : undefined,
     phone: row.phone || undefined,
     email: row.email || undefined,
     address: row.address || undefined,
@@ -107,6 +125,10 @@ export function mapRowToClanMember(row: SupabaseMemberRow | any): ClanMember {
  */
 export function mapClanMemberToRow(member: ClanMember): SupabaseMemberRow {
   const rowId = isUUID(member.id) ? member.id : generateUUID();
+  const validSpouseIds = Array.isArray(member.spouseIds)
+    ? member.spouseIds.filter(id => isUUID(id))
+    : [];
+
   return {
     id: rowId,
     user_id: member.userId ? member.userId : null,
@@ -131,6 +153,7 @@ export function mapClanMemberToRow(member: ClanMember): SupabaseMemberRow {
     resting_place: member.restingPlace || null,
     spouse: member.spouse || null,
     spouse_list: Array.isArray(member.spouseList) ? member.spouseList : [],
+    spouse_ids: validSpouseIds,
     achievements: Array.isArray(member.achievements) ? member.achievements : [],
     bio: member.bio || null,
   };
@@ -180,12 +203,13 @@ export async function fetchMembersService(): Promise<{ members: ClanMember[]; is
 }
 
 /**
- * Save / Update a member
+ * Save / Update a member (with symmetrical spouse links)
  */
 export async function saveMemberService(
   member: ClanMember, 
-  currentRole: Role
-): Promise<{ success: boolean; member: ClanMember; error?: string }> {
+  currentRole: Role,
+  allMembers?: ClanMember[]
+): Promise<{ success: boolean; member: ClanMember; updatedSpouses?: ClanMember[]; error?: string }> {
   // Permission verification: Only 'admin' or 'support' can add/edit
   if (currentRole === 'member') {
     return {
@@ -196,15 +220,77 @@ export async function saveMemberService(
   }
 
   const client = getSupabaseClient();
-  if (!client) {
-    return {
-      success: false,
-      member,
-      error: 'Chưa kết nối được Supabase. Vui lòng kiểm tra cấu hình kết nối database.',
-    };
-  }
-
   const row = mapClanMemberToRow(member);
+  const targetMemberId = row.id;
+  // Ensure the member has the matching target ID if newly generated
+  const memberToSave: ClanMember = {
+    ...member,
+    id: targetMemberId,
+  };
+
+  const currentMemberPool = allMembers || [];
+  const prevMember = currentMemberPool.find(m => m.id === member.id || m.id === targetMemberId);
+  const prevSpouseIds = prevMember?.spouseIds || [];
+  const newSpouseIds = member.spouseIds || [];
+
+  // Determine spouses to link and unlink
+  const updatedSpouses: ClanMember[] = [];
+
+  // Spouses to link or unlink
+  currentMemberPool.forEach(m => {
+    if (m.id === targetMemberId) return;
+
+    if (newSpouseIds.includes(m.id)) {
+      // Must have targetMemberId in their spouseIds
+      const existingIds = m.spouseIds || [];
+      if (!existingIds.includes(targetMemberId)) {
+        updatedSpouses.push({
+          ...m,
+          spouseIds: [...existingIds, targetMemberId],
+        });
+      }
+    } else if (prevSpouseIds.includes(m.id) || (m.spouseIds && m.spouseIds.includes(targetMemberId))) {
+      // Must be unlinked
+      const existingIds = m.spouseIds || [];
+      if (existingIds.includes(targetMemberId)) {
+        updatedSpouses.push({
+          ...m,
+          spouseIds: existingIds.filter(id => id !== targetMemberId),
+        });
+      }
+    }
+  });
+
+  if (!client) {
+    // Local storage fallback save when Supabase is not connected
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_MEMBERS);
+      let list: ClanMember[] = saved ? JSON.parse(saved) : (allMembers || INITIAL_MEMBERS);
+      const idx = list.findIndex(m => m.id === targetMemberId || m.id === member.id);
+      if (idx >= 0) {
+        list[idx] = memberToSave;
+      } else {
+        list.push(memberToSave);
+      }
+
+      // Update symmetric spouses in local list
+      updatedSpouses.forEach(sp => {
+        const sIdx = list.findIndex(m => m.id === sp.id);
+        if (sIdx >= 0) {
+          list[sIdx] = sp;
+        }
+      });
+
+      localStorage.setItem(LOCAL_STORAGE_MEMBERS, JSON.stringify(list));
+      return { success: true, member: memberToSave, updatedSpouses };
+    } catch (e: any) {
+      return {
+        success: false,
+        member: memberToSave,
+        error: e.message || 'Lỗi lưu dữ liệu cục bộ.',
+      };
+    }
+  }
 
   try {
     const { data, error } = await client
@@ -217,13 +303,26 @@ export async function saveMemberService(
       console.error('Supabase upsert error:', error.message);
       return {
         success: false,
-        member,
+        member: memberToSave,
         error: error.message || 'Lỗi lưu dữ liệu lên Supabase. Vui lòng kiểm tra quyền RLS hoặc kết nối.',
       };
     }
 
     // Map returned DB record
-    const savedMember = data ? mapRowToClanMember(data) : member;
+    const savedMember = data ? mapRowToClanMember(data) : memberToSave;
+
+    // Symmetrically update spouses in Supabase
+    for (const sp of updatedSpouses) {
+      try {
+        const validIds = (sp.spouseIds || []).filter(isUUID);
+        await client
+          .from('members')
+          .update({ spouse_ids: validIds })
+          .eq('id', sp.id);
+      } catch (spErr) {
+        console.warn('Could not update spouse relation in Supabase for', sp.id, spErr);
+      }
+    }
 
     // Update local storage backup with real saved record
     try {
@@ -235,17 +334,25 @@ export async function saveMemberService(
       } else {
         list.push(savedMember);
       }
+
+      updatedSpouses.forEach(sp => {
+        const sIdx = list.findIndex(m => m.id === sp.id);
+        if (sIdx >= 0) {
+          list[sIdx] = sp;
+        }
+      });
+
       localStorage.setItem(LOCAL_STORAGE_MEMBERS, JSON.stringify(list));
     } catch (e) {
       console.error(e);
     }
 
-    return { success: true, member: savedMember };
+    return { success: true, member: savedMember, updatedSpouses };
   } catch (e: any) {
     console.error('Supabase save error:', e.message);
     return {
       success: false,
-      member,
+      member: memberToSave,
       error: e.message || 'Lỗi kết nối Supabase.',
     };
   }

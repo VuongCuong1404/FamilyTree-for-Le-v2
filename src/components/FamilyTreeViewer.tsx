@@ -76,6 +76,20 @@ function filterMembersForTree(
       }
     });
 
+    // Include linked spouses so married couples are kept in the chart
+    const spouseIdsToAdd = new Set<string>();
+    branchMemberIds.forEach(id => {
+      const mem = members.find(x => x.id === id);
+      if (mem?.spouseIds) {
+        mem.spouseIds.forEach(sid => {
+          if (members.some(x => x.id === sid)) {
+            spouseIdsToAdd.add(sid);
+          }
+        });
+      }
+    });
+    spouseIdsToAdd.forEach(id => branchMemberIds.add(id));
+
     list = list.filter(m => branchMemberIds.has(m.id));
   }
 
@@ -133,7 +147,7 @@ function convertClanMembersToChartData(members: ClanMember[]) {
       },
       rels: {
         parents,
-        spouses: [] as string[],
+        spouses: (m.spouseIds || []).filter(sid => members.some(x => x.id === sid)),
         children,
       },
     };
@@ -268,9 +282,25 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       ? 'bg-white border-amber-900/25 hover:border-amber-600 hover:shadow-xl'
       : 'bg-[#faf8f5] border-stone-300/90 hover:border-amber-700 hover:shadow-xl';
 
-    const formattedSpouses = member.spouseList && member.spouseList.length > 0
-      ? member.spouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ')
-      : (member.spouse || '');
+    const spouseNames = (member.spouseIds && member.spouseIds.length > 0)
+      ? member.spouseIds.map(sid => members.find(x => x.id === sid)?.fullName).filter(Boolean)
+      : [];
+    const formattedSpouses = spouseNames.length > 0
+      ? spouseNames.join(', ')
+      : (member.spouseList && member.spouseList.length > 0
+          ? member.spouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ')
+          : (member.spouse || ''));
+
+    // Small secondary label "Mẹ: {tên}" for children
+    let motherHtml = '';
+    const motherMember = member.motherId ? members.find(x => x.id === member.motherId) : undefined;
+    const motherName = motherMember ? motherMember.fullName : (member.motherName || '');
+    if (motherName) {
+      motherHtml = `<div class="text-[10px] font-semibold text-rose-800 bg-rose-50/90 border border-rose-200/80 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 max-w-full truncate" title="Thân mẫu: ${escapeHtml(motherName)}">
+          <span class="text-rose-500 font-bold shrink-0">Mẹ:</span>
+          <span class="truncate font-medium text-stone-800">${escapeHtml(motherName)}</span>
+        </div>`;
+    }
 
     const spouseHtml = showSpouses && formattedSpouses
       ? `<div class="mt-2 pt-1.5 border-t border-stone-200/70 text-[11px] flex items-center gap-1 text-stone-700 bg-stone-50/90 -mx-3.5 -mb-3.5 p-2 rounded-b-2xl">
@@ -351,6 +381,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 ${escapeHtml(ageInfo.formattedText)}
               </span>
             </div>
+            ${motherHtml}
             ${lunarHtml}
             ${occupHtml}
           </div>

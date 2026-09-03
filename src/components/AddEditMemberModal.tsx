@@ -13,10 +13,12 @@ import {
   Layers,
   Sparkles,
   Plus,
-  Trash2
+  Trash2,
+  Search
 } from 'lucide-react';
 import { ClanMember, Gender, SpouseInfo } from '../types';
 import { calculateAgeInfo, getGenderVisuals } from '../utils/genealogyUtils';
+import { generateUUID } from '../services/supabaseService';
 
 interface AddEditMemberModalProps {
   isOpen: boolean;
@@ -46,14 +48,52 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
   const [isAlive, setIsAlive] = useState(true);
   const [lunarDeathDate, setLunarDeathDate] = useState('');
   const [parentId, setParentId] = useState<string | null>(null);
+  const [motherId, setMotherId] = useState<string | null>(null);
   const [motherName, setMotherName] = useState('');
-  const [spouseList, setSpouseList] = useState<SpouseInfo[]>([]);
+  const [selectedSpouseIds, setSelectedSpouseIds] = useState<string[]>([]);
+  const [spouseSearchTerm, setSpouseSearchTerm] = useState('');
+  const [isSpouseDropdownOpen, setIsSpouseDropdownOpen] = useState(false);
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [occupation, setOccupation] = useState('');
   const [bio, setBio] = useState('');
   const [restingPlace, setRestingPlace] = useState('');
   const [achievements, setAchievements] = useState('');
+
+  // Find father and his spouses to determine if "Con của bà nào" should appear
+  const currentFatherId = parentId || parentToAssign?.id;
+  const currentFather = useMemo(() => {
+    return currentFatherId ? allMembers.find(m => m.id === currentFatherId) : null;
+  }, [currentFatherId, allMembers]);
+
+  const fatherSpouseIds = useMemo(() => {
+    if (!currentFather) return [];
+    const direct = currentFather.spouseIds || [];
+    const reverse = allMembers.filter(m => m.id !== currentFather.id && m.spouseIds?.includes(currentFather.id)).map(m => m.id);
+    return Array.from(new Set([...direct, ...reverse]));
+  }, [currentFather, allMembers]);
+
+  // Candidates for spouse link autocomplete
+  const candidateSpouseMembers = useMemo(() => {
+    const curId = memberToEdit?.id;
+    const q = spouseSearchTerm.trim().toLowerCase();
+
+    return allMembers.filter(m => {
+      if (curId && m.id === curId) return false;
+      if (selectedSpouseIds.includes(m.id)) return false;
+
+      if (!q) {
+        return true;
+      }
+
+      return (
+        m.fullName.toLowerCase().includes(q) ||
+        (m.branch && m.branch.toLowerCase().includes(q)) ||
+        String(m.generation).includes(q) ||
+        (m.birthYear && String(m.birthYear).includes(q))
+      );
+    });
+  }, [allMembers, memberToEdit, selectedSpouseIds, spouseSearchTerm]);
 
   useEffect(() => {
     if (memberToEdit) {
@@ -72,16 +112,13 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setIsAlive(memberToEdit.isAlive !== false);
       setLunarDeathDate(memberToEdit.lunarDeathDate || '');
       setParentId(memberToEdit.parentId || null);
+      setMotherId(memberToEdit.motherId || null);
       setMotherName(memberToEdit.motherName || '');
       
-      // Load spouseList or fallback to single spouse
-      if (memberToEdit.spouseList && Array.isArray(memberToEdit.spouseList) && memberToEdit.spouseList.length > 0) {
-        setSpouseList(memberToEdit.spouseList.map(s => ({ ...s })));
-      } else if (memberToEdit.spouse && memberToEdit.spouse.trim()) {
-        setSpouseList([{ name: memberToEdit.spouse.trim(), note: 'Chính thất' }]);
-      } else {
-        setSpouseList([]);
-      }
+      // Load linked spouseIds
+      const direct = memberToEdit.spouseIds || [];
+      const reverse = allMembers.filter(m => m.id !== memberToEdit.id && m.spouseIds?.includes(memberToEdit.id)).map(m => m.id);
+      setSelectedSpouseIds(Array.from(new Set([...direct, ...reverse])));
 
       setPhone(memberToEdit.phone || '');
       setAddress(memberToEdit.address || '');
@@ -102,8 +139,20 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setIsAlive(true);
       setLunarDeathDate('');
       setParentId(parentToAssign.id);
-      setMotherName(parentToAssign.spouse || (parentToAssign.spouseList?.[0]?.name) || '');
-      setSpouseList([]);
+
+      // Auto assign mother if parent has spouses
+      const pSpouseIds = parentToAssign.spouseIds || [];
+      if (pSpouseIds.length > 0) {
+        const firstMId = pSpouseIds[0];
+        setMotherId(firstMId);
+        const motherMem = allMembers.find(m => m.id === firstMId);
+        setMotherName(motherMem?.fullName || parentToAssign.spouse || '');
+      } else {
+        setMotherId(null);
+        setMotherName(parentToAssign.spouse || (parentToAssign.spouseList?.[0]?.name) || '');
+      }
+
+      setSelectedSpouseIds([]);
       setPhone('');
       setAddress(parentToAssign.address || '');
       setOccupation('');
@@ -122,8 +171,9 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setIsAlive(true);
       setLunarDeathDate('');
       setParentId(null);
+      setMotherId(null);
       setMotherName('');
-      setSpouseList([]);
+      setSelectedSpouseIds([]);
       setPhone('');
       setAddress('');
       setOccupation('');
@@ -131,24 +181,18 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setRestingPlace('');
       setAchievements('');
     }
+    setSpouseSearchTerm('');
+    setIsSpouseDropdownOpen(false);
   }, [memberToEdit, parentToAssign, isOpen, allMembers]);
 
-  const handleAddSpouse = () => {
-    setSpouseList(prev => [
-      ...prev,
-      {
-        name: '',
-        note: prev.length === 0 ? 'Chính thất' : 'Kế thất',
-      }
-    ]);
+  const handleAddSpouseId = (id: string) => {
+    setSelectedSpouseIds(prev => Array.from(new Set([...prev, id])));
+    setSpouseSearchTerm('');
+    setIsSpouseDropdownOpen(false);
   };
 
-  const handleRemoveSpouse = (index: number) => {
-    setSpouseList(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleUpdateSpouse = (index: number, field: keyof SpouseInfo, val: any) => {
-    setSpouseList(prev => prev.map((s, i) => i === index ? { ...s, [field]: val } : s));
+  const handleRemoveSpouseId = (id: string) => {
+    setSelectedSpouseIds(prev => prev.filter(x => x !== id));
   };
 
   if (!isOpen) return null;
@@ -160,26 +204,27 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
     const achievementsList = achievements.split(',').map(s => s.trim()).filter(Boolean);
     const parsedOrder = orderInFamily.trim() !== '' ? Number(orderInFamily) : undefined;
 
-    // Filter valid spouse items with non-empty name
-    const validSpouseList = spouseList
-      .map(s => ({
-        name: s.name.trim(),
-        note: s.note?.trim() || undefined,
-        birthYear: s.birthYear,
-        deathYear: s.deathYear,
-        isAlive: s.isAlive,
-        lunarDeathDate: s.lunarDeathDate,
-        restingPlace: s.restingPlace,
-        hometown: s.hometown,
-      }))
-      .filter(s => s.name.length > 0);
+    // Build primary spouse string and legacy spouseList from selected spouse IDs
+    const linkedSpouses = selectedSpouseIds
+      .map(id => allMembers.find(m => m.id === id))
+      .filter((m): m is ClanMember => Boolean(m));
 
-    const primarySpouseString = validSpouseList.length > 0
-      ? validSpouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ')
+    const primarySpouseString = linkedSpouses.length > 0
+      ? linkedSpouses.map(s => s.fullName).join(', ')
       : undefined;
 
+    const generatedSpouseList: SpouseInfo[] = linkedSpouses.map((s, idx) => ({
+      name: s.fullName,
+      birthYear: s.birthYear,
+      deathYear: s.deathYear,
+      isAlive: s.isAlive,
+      note: idx === 0 ? 'Chính thất' : `Phối ngẫu ${idx + 1}`,
+    }));
+
+    const finalMotherName = motherName.trim() || (motherId ? (allMembers.find(m => m.id === motherId)?.fullName || '') : '');
+
     const newMember: ClanMember = {
-      id: memberToEdit ? memberToEdit.id : `mem_${Date.now()}`,
+      id: memberToEdit ? memberToEdit.id : generateUUID(),
       fullName: fullName.trim(),
       gender,
       generation: Number(generation),
@@ -191,9 +236,11 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       isAlive,
       lunarDeathDate: !isAlive && lunarDeathDate.trim() ? lunarDeathDate.trim() : undefined,
       parentId: parentId || null,
-      motherName: motherName.trim() || undefined,
+      motherId: motherId || null,
+      motherName: finalMotherName || undefined,
       spouse: primarySpouseString,
-      spouseList: validSpouseList.length > 0 ? validSpouseList : undefined,
+      spouseList: generatedSpouseList.length > 0 ? generatedSpouseList : undefined,
+      spouseIds: selectedSpouseIds,
       phone: phone.trim() || undefined,
       email: memberToEdit?.email,
       address: address.trim() || undefined,
@@ -349,9 +396,66 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             </select>
           </div>
 
+          {/* If Father has >= 2 spouses: Mother Selection Dropdown */}
+          {fatherSpouseIds.length >= 2 && (
+            <div className="p-3.5 rounded-2xl bg-rose-50/80 border border-rose-300 shadow-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-stone-900 font-bold flex items-center gap-1.5 text-xs">
+                  <Heart className="w-4 h-4 text-rose-600 fill-rose-500/20" />
+                  <span>Con của bà nào? (Chọn Thân mẫu từ {fatherSpouseIds.length} người phối ngẫu của cha):</span>
+                </label>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-200 text-rose-950 border border-rose-300">
+                  Đa phối ngẫu
+                </span>
+              </div>
+
+              <select
+                value={motherId || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) {
+                    setMotherId(val);
+                    const found = allMembers.find(m => m.id === val);
+                    if (found) setMotherName(found.fullName);
+                  } else {
+                    setMotherId(null);
+                  }
+                }}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-rose-300 text-stone-900 font-semibold focus:outline-none focus:border-rose-600 shadow-xs"
+              >
+                <option value="">-- Chọn người mẹ từ phối ngẫu của cha --</option>
+                {fatherSpouseIds.map((sId, sIdx) => {
+                  const sMem = allMembers.find(m => m.id === sId);
+                  return (
+                    <option key={sId} value={sId}>
+                      {sMem 
+                        ? `${sMem.fullName} (${sIdx === 0 ? 'Chính thất' : `Phối ngẫu ${sIdx + 1}`}, Đời ${sMem.generation} - ${sMem.branch}${sMem.birthYear ? `, Sinh ${sMem.birthYear}` : ''})`
+                        : sId}
+                    </option>
+                  );
+                })}
+              </select>
+
+              {motherId ? (
+                <div className="text-[11px] text-rose-800 font-semibold flex items-center gap-1">
+                  <span>Đã gán Thân mẫu:</span>
+                  <strong className="text-rose-950 underline underline-offset-2">
+                    {allMembers.find(m => m.id === motherId)?.fullName || motherName}
+                  </strong>
+                </div>
+              ) : (
+                <div className="text-[10.5px] text-stone-500 italic">
+                  * Hãy chọn đúng người mẹ để cây gia phả nối nhánh con chính xác theo từng cặp cha - mẹ.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Row 4: Mother Name */}
           <div>
-            <label className="block text-stone-700 font-bold mb-1">Thân mẫu (Mẹ đẻ):</label>
+            <label className="block text-stone-700 font-bold mb-1">
+              Thân mẫu (Mẹ đẻ){fatherSpouseIds.length >= 2 ? ' - Tên hiển thị:' : ':'}
+            </label>
             <input
               type="text"
               value={motherName}
@@ -361,86 +465,141 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             />
           </div>
 
-          {/* Row 5: Dynamic Spouses List */}
+          {/* Row 5: Relational Spouses Search & Select */}
           <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/90 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-stone-900 font-bold flex items-center gap-1.5 text-xs">
                 <Heart className="w-4 h-4 text-rose-500 fill-rose-500/20" />
-                <span>Danh sách Phối ngẫu (Vợ / Chồng):</span>
-                {spouseList.length > 0 && (
+                <span>Phối ngẫu (Vợ / Chồng liên kết trong gia phả):</span>
+                {selectedSpouseIds.length > 0 && (
                   <span className="px-1.5 py-0.2 rounded-full bg-amber-200 text-amber-950 text-[10px] font-bold">
-                    {spouseList.length}
+                    {selectedSpouseIds.length}
                   </span>
                 )}
               </label>
-
-              <button
-                type="button"
-                onClick={handleAddSpouse}
-                className="px-2.5 py-1 rounded-lg bg-amber-800 hover:bg-amber-900 text-amber-50 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all shadow-xs hover:scale-105"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ Thêm vợ/chồng</span>
-              </button>
             </div>
 
-            {spouseList.length === 0 ? (
-              <div className="text-center py-3 text-stone-500 text-xs border border-dashed border-amber-300/80 rounded-xl bg-white/70">
-                <span>Chưa có phối ngẫu. Bấm </span>
-                <button
-                  type="button"
-                  onClick={handleAddSpouse}
-                  className="font-bold text-amber-800 hover:underline cursor-pointer inline-flex items-center gap-0.5"
-                >
-                  <span>+ Thêm vợ/chồng</span>
-                </button>
-                <span> để thêm thông tin.</span>
+            {/* Display selected spouses */}
+            {selectedSpouseIds.length === 0 ? (
+              <div className="text-center py-2.5 text-stone-500 text-xs border border-dashed border-amber-300/80 rounded-xl bg-white/70">
+                Chưa liên kết phối ngẫu. Hãy tìm và chọn thành viên từ ô tìm kiếm bên dưới.
               </div>
             ) : (
-              <div className="space-y-2.5">
-                {spouseList.map((sp, idx) => (
-                  <div 
-                    key={idx} 
-                    className="p-2.5 rounded-xl bg-white border border-amber-200 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
-                  >
-                    <div className="flex-1">
-                      <label className="block text-[10px] font-semibold text-stone-500 mb-0.5 sm:hidden">
-                        Họ tên phối ngẫu {idx + 1}:
-                      </label>
-                      <input
-                        type="text"
-                        value={sp.name}
-                        onChange={(e) => handleUpdateSpouse(idx, 'name', e.target.value)}
-                        placeholder={`Họ tên vợ/chồng ${idx + 1} (VD: Bà Trần Thị Mai)...`}
-                        className="w-full px-3 py-2 rounded-lg bg-stone-50 border border-stone-300 text-stone-900 text-xs font-semibold focus:outline-none focus:border-amber-600"
-                      />
-                    </div>
-
-                    <div className="w-full sm:w-44">
-                      <label className="block text-[10px] font-semibold text-stone-500 mb-0.5 sm:hidden">
-                        Ghi chú danh phận:
-                      </label>
-                      <input
-                        type="text"
-                        value={sp.note || ''}
-                        onChange={(e) => handleUpdateSpouse(idx, 'note', e.target.value)}
-                        placeholder="Ghi chú (Chính thất, Kế thất...)"
-                        className="w-full px-3 py-2 rounded-lg bg-stone-50 border border-stone-300 text-stone-800 text-xs focus:outline-none focus:border-amber-600"
-                      />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSpouse(idx)}
-                      className="p-2 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors self-end sm:self-center cursor-pointer shrink-0"
-                      title="Xóa phối ngẫu này"
+              <div className="space-y-2">
+                {selectedSpouseIds.map((spId, idx) => {
+                  const spMem = allMembers.find(m => m.id === spId);
+                  if (!spMem) return null;
+                  return (
+                    <div 
+                      key={spId}
+                      className="p-2.5 rounded-xl bg-white border border-amber-200 shadow-xs flex items-center justify-between gap-2"
                     >
-                      <Trash2 className="w-4 h-4 text-red-500" />
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${spMem.gender === 'male' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
+                          {spMem.gender === 'male' ? '♂' : '♀'}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-stone-900 text-xs truncate">{spMem.fullName}</span>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                              {idx === 0 ? 'Chính thất' : `Phối ngẫu ${idx + 1}`}
+                            </span>
+                          </div>
+                          <div className="text-[10.5px] text-stone-500 truncate mt-0.5">
+                            Đời {spMem.generation} • {spMem.branch} {spMem.birthYear ? `• Sinh ${spMem.birthYear}` : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSpouseId(spId)}
+                        className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 cursor-pointer"
+                        title="Hủy liên kết phối ngẫu này"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
+
+            {/* Autocomplete Search input */}
+            <div className="relative">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={spouseSearchTerm}
+                  onChange={(e) => {
+                    setSpouseSearchTerm(e.target.value);
+                    setIsSpouseDropdownOpen(true);
+                  }}
+                  onFocus={() => setIsSpouseDropdownOpen(true)}
+                  placeholder="Tìm và liên kết vợ/chồng từ danh sách thành viên..."
+                  className="w-full pl-8 pr-8 py-2 text-xs rounded-xl bg-white border border-amber-300 text-stone-900 placeholder:text-stone-400 focus:outline-none focus:border-amber-700 shadow-xs"
+                />
+                {spouseSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSpouseSearchTerm('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Dropdown Menu */}
+              {isSpouseDropdownOpen && (
+                <div className="absolute z-20 left-0 right-0 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-amber-400 shadow-xl p-1 space-y-1">
+                  <div className="px-2 py-1 text-[10px] font-bold text-stone-500 uppercase tracking-wider flex justify-between items-center border-b border-stone-100 bg-stone-50 rounded-t-lg">
+                    <span>Gợi ý ({candidateSpouseMembers.length} thành viên)</span>
+                    <button 
+                      type="button" 
+                      onClick={() => setIsSpouseDropdownOpen(false)}
+                      className="text-stone-400 hover:text-stone-700 text-xs cursor-pointer font-bold"
+                    >
+                      Đóng ✕
+                    </button>
+                  </div>
+
+                  {candidateSpouseMembers.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-stone-500">
+                      Không tìm thấy thành viên phù hợp
+                    </div>
+                  ) : (
+                    candidateSpouseMembers.slice(0, 10).map(cand => (
+                      <button
+                        key={cand.id}
+                        type="button"
+                        onClick={() => handleAddSpouseId(cand.id)}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-amber-50 flex items-center justify-between gap-2 group transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${cand.gender === 'male' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
+                            {cand.gender === 'male' ? '♂' : '♀'}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs text-stone-900 group-hover:text-amber-900 truncate">
+                              {cand.fullName}
+                            </div>
+                            <div className="text-[10px] text-stone-500 truncate">
+                              Đời {cand.generation} • {cand.branch} {cand.birthYear ? `• Sinh ${cand.birthYear}` : ''}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span className="shrink-0 px-2 py-0.5 rounded-md bg-amber-100 group-hover:bg-amber-800 group-hover:text-white text-amber-900 text-[10px] font-bold transition-colors">
+                          + Liên kết
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Row 5: Living Status, Birth Year, Death Year */}
