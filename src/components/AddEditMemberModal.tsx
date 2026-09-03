@@ -384,7 +384,35 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             <label className="block text-stone-700 font-bold mb-1">Thân phụ (Bố đẻ trong họ):</label>
             <select
               value={parentId || ''}
-              onChange={(e) => setParentId(e.target.value || null)}
+              onChange={(e) => {
+                const newFId = e.target.value || null;
+                setParentId(newFId);
+                if (!newFId) {
+                  setMotherId(null);
+                  setMotherName('');
+                  return;
+                }
+                const fatherMem = allMembers.find(m => m.id === newFId);
+                if (!fatherMem) return;
+                const direct = fatherMem.spouseIds || [];
+                const reverse = allMembers.filter(m => m.id !== fatherMem.id && m.spouseIds?.includes(fatherMem.id)).map(m => m.id);
+                const fSpouseList = Array.from(new Set([...direct, ...reverse]));
+
+                if (fSpouseList.length === 1) {
+                  setMotherId(fSpouseList[0]);
+                  const mMem = allMembers.find(m => m.id === fSpouseList[0]);
+                  setMotherName(mMem?.fullName || '');
+                } else if (fSpouseList.length >= 2) {
+                  if (!motherId || !fSpouseList.includes(motherId)) {
+                    setMotherId(fSpouseList[0]);
+                    const mMem = allMembers.find(m => m.id === fSpouseList[0]);
+                    setMotherName(mMem?.fullName || '');
+                  }
+                } else {
+                  setMotherId(null);
+                  setMotherName(fatherMem.spouse || '');
+                }
+              }}
               className="w-full px-3 py-2.5 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none"
             >
               <option value="">Không có / Là Cụ Thủy Tổ khởi nghiệp</option>
@@ -396,16 +424,16 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             </select>
           </div>
 
-          {/* If Father has >= 2 spouses: Mother Selection Dropdown */}
+          {/* If Father has >= 2 spouses: Mother Selection Dropdown (Con của bà nào) */}
           {fatherSpouseIds.length >= 2 && (
-            <div className="p-3.5 rounded-2xl bg-rose-50/80 border border-rose-300 shadow-xs space-y-2">
+            <div className="p-3.5 rounded-2xl bg-rose-50/90 border border-rose-300 shadow-xs space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-stone-900 font-bold flex items-center gap-1.5 text-xs">
                   <Heart className="w-4 h-4 text-rose-600 fill-rose-500/20" />
-                  <span>Con của bà nào? (Chọn Thân mẫu từ {fatherSpouseIds.length} người phối ngẫu của cha):</span>
+                  <span>Con của bà nào? (Chọn Thân mẫu từ {fatherSpouseIds.length} người vợ đã liên kết):</span>
                 </label>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-200 text-rose-950 border border-rose-300">
-                  Đa phối ngẫu
+                  Bắt buộc chọn
                 </span>
               </div>
 
@@ -423,7 +451,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 }}
                 className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-rose-300 text-stone-900 font-semibold focus:outline-none focus:border-rose-600 shadow-xs"
               >
-                <option value="">-- Chọn người mẹ từ phối ngẫu của cha --</option>
+                <option value="">-- Vui lòng chọn Thân mẫu --</option>
                 {fatherSpouseIds.map((sId, sIdx) => {
                   const sMem = allMembers.find(m => m.id === sId);
                   return (
@@ -451,19 +479,39 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             </div>
           )}
 
-          {/* Row 4: Mother Name */}
-          <div>
-            <label className="block text-stone-700 font-bold mb-1">
-              Thân mẫu (Mẹ đẻ){fatherSpouseIds.length >= 2 ? ' - Tên hiển thị:' : ':'}
-            </label>
-            <input
-              type="text"
-              value={motherName}
-              onChange={(e) => setMotherName(e.target.value)}
-              placeholder="Ví dụ: Bà Hoàng Thị Minh Châu"
-              className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none focus:border-amber-600 font-medium"
-            />
-          </div>
+          {/* If Father has exactly 1 spouse: Auto-assign without asking */}
+          {fatherSpouseIds.length === 1 && (
+            <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-300/80 text-xs flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Heart className="w-4 h-4 text-emerald-600 fill-emerald-500/20 shrink-0" />
+                <div className="text-stone-800">
+                  <span className="text-stone-500 font-medium">Thân mẫu: </span>
+                  <strong className="text-emerald-950 font-bold">
+                    {allMembers.find(m => m.id === fatherSpouseIds[0])?.fullName || motherName}
+                  </strong>
+                </div>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 font-bold border border-emerald-300 shrink-0">
+                Tự động gán (1 vợ)
+              </span>
+            </div>
+          )}
+
+          {/* If Father has 0 linked spouses: Manual text input */}
+          {fatherSpouseIds.length === 0 && (
+            <div>
+              <label className="block text-stone-700 font-bold mb-1">
+                Thân mẫu (Mẹ đẻ - nhập chữ nếu chưa tạo hồ sơ trong hệ thống):
+              </label>
+              <input
+                type="text"
+                value={motherName}
+                onChange={(e) => setMotherName(e.target.value)}
+                placeholder="Ví dụ: Bà Hoàng Thị Minh Châu"
+                className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none focus:border-amber-600 font-medium"
+              />
+            </div>
+          )}
 
           {/* Row 5: Relational Spouses Search & Select */}
           <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/90 space-y-3">

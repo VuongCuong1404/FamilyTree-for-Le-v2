@@ -47,7 +47,8 @@ function escapeHtml(str: string): string {
 function filterMembersForTree(
   members: ClanMember[],
   selectedBranch: string,
-  selectedGenFilter: number | 'all'
+  selectedGenFilter: number | 'all',
+  showSpouses: boolean = true
 ): ClanMember[] {
   let list = members;
 
@@ -72,32 +73,59 @@ function filterMembersForTree(
     // Always include generation 1 root members
     list.forEach(m => {
       if (m.generation === 1 || !m.parentId) {
+        // If showSpouses is false, do not include married-in wives even if gen 1
+        if (!showSpouses && m.gender === 'female' && !m.parentId) {
+          return;
+        }
         branchMemberIds.add(m.id);
       }
     });
 
-    // Include linked spouses so married couples are kept in the chart
-    const spouseIdsToAdd = new Set<string>();
-    branchMemberIds.forEach(id => {
-      const mem = members.find(x => x.id === id);
-      if (mem?.spouseIds) {
-        mem.spouseIds.forEach(sid => {
-          if (members.some(x => x.id === sid)) {
-            spouseIdsToAdd.add(sid);
-          }
-        });
-      }
-    });
-    spouseIdsToAdd.forEach(id => branchMemberIds.add(id));
+    // Include linked spouses so married couples are kept in the chart (ONLY when showSpouses is true)
+    if (showSpouses) {
+      const spouseIdsToAdd = new Set<string>();
+      branchMemberIds.forEach(id => {
+        const mem = members.find(x => x.id === id);
+        if (mem?.spouseIds) {
+          mem.spouseIds.forEach(sid => {
+            if (members.some(x => x.id === sid)) {
+              spouseIdsToAdd.add(sid);
+            }
+          });
+        }
+      });
+      spouseIdsToAdd.forEach(id => branchMemberIds.add(id));
+    }
 
     list = list.filter(m => branchMemberIds.has(m.id));
+  }
+
+  // When showSpouses is false: remove any married-in spouses (keep pure bloodline)
+  if (!showSpouses) {
+    const allSpouseIds = new Set<string>();
+    members.forEach(m => {
+      if (m.spouseIds) {
+        m.spouseIds.forEach(sid => allSpouseIds.add(sid));
+      }
+    });
+
+    list = list.filter(m => {
+      // Bloodline descendants always have parentId
+      if (m.parentId) return true;
+      // Male founder/ancestors are kept
+      if (m.gender === 'male') return true;
+      // Married-in wives without parentId are hidden when showSpouses is false
+      if (allSpouseIds.has(m.id)) return false;
+      if (m.gender === 'female' && !m.parentId) return false;
+      return true;
+    });
   }
 
   return list;
 }
 
 // Convert ClanMember[] to family-chart Datum[]
-function convertClanMembersToChartData(members: ClanMember[]) {
+function convertClanMembersToChartData(members: ClanMember[], showSpouses: boolean = true) {
   const memberMap = new Map<string, ClanMember>();
   members.forEach(m => memberMap.set(m.id, m));
 
@@ -123,7 +151,8 @@ function convertClanMembersToChartData(members: ClanMember[]) {
     if (m.parentId && members.some(x => x.id === m.parentId)) {
       parents.push(m.parentId);
     }
-    if (m.motherId && m.motherId !== m.parentId && members.some(x => x.id === m.motherId)) {
+    // When showSpouses is true, attach motherId to parents so family-chart branches children under the specific wife
+    if (showSpouses && m.motherId && m.motherId !== m.parentId && members.some(x => x.id === m.motherId)) {
       parents.push(m.motherId);
     }
 
@@ -147,7 +176,9 @@ function convertClanMembersToChartData(members: ClanMember[]) {
       },
       rels: {
         parents,
-        spouses: (m.spouseIds || []).filter(sid => members.some(x => x.id === sid)),
+        spouses: showSpouses
+          ? (m.spouseIds || []).filter(sid => members.some(x => x.id === sid))
+          : [],
         children,
       },
     };
@@ -398,10 +429,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     const container = chartContainerRef.current;
     container.innerHTML = ''; // Clean previous tree instances
 
-    const treeMembers = filterMembersForTree(members, selectedBranch, selectedGenFilter);
+    const treeMembers = filterMembersForTree(members, selectedBranch, selectedGenFilter, showSpouses);
     if (treeMembers.length === 0) return;
 
-    const chartData = convertClanMembersToChartData(treeMembers);
+    const chartData = convertClanMembersToChartData(treeMembers, showSpouses);
 
     try {
       const chart = f3.createChart(container, chartData);
