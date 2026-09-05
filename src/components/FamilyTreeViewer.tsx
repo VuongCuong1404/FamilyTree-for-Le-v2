@@ -443,8 +443,13 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         </div>
 
         <div class="flex items-start gap-2.5">
-          <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold font-serif-clan text-xs shadow-md ${genderVisual.avatarBg}">
-            ${genderVisual.title}
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold font-serif-clan text-xs shadow-md overflow-hidden relative ${genderVisual.avatarBg}" data-fallback-initial="${escapeHtml(genderVisual.title)}">
+            ${member.avatar ? `
+              <img src="${escapeHtml(member.avatar)}" alt="${escapeHtml(member.fullName)}" class="w-full h-full object-cover rounded-xl member-avatar-img" crossOrigin="anonymous" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
+              <span class="member-avatar-fallback hidden w-full h-full items-center justify-center">${genderVisual.title}</span>
+            ` : `
+              <span class="member-avatar-fallback w-full h-full flex items-center justify-center">${genderVisual.title}</span>
+            `}
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1 flex-wrap">
@@ -793,9 +798,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       // Chờ một nhịp nhỏ để DOM ổn định kích thước
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // 4. Chụp bằng html2canvas với scale: 2 (KHÔNG bật foreignObjectRendering)
+      // 4. Chụp bằng html2canvas với scale: 2 và foreignObjectRendering: true để vẽ chuẩn đường nối SVG
       const canvas = await html2canvas(chartCont, {
         scale: 2,
+        foreignObjectRendering: true,
         useCORS: true,
         allowTaint: true,
         logging: false,
@@ -832,6 +838,36 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.opacity = '1';
             (node as unknown as HTMLElement).style.visibility = 'visible';
             (node as unknown as HTMLElement).style.display = '';
+          });
+
+          // Xử lý avatar: đảm bảo crossOrigin và dự phòng chữ cái nếu CORS Storage bị chặn để bảo đảm đường nối và chữ luôn hiển thị đúng
+          const avatarImgs = clonedDoc.querySelectorAll<HTMLImageElement>('img.member-avatar-img, img');
+          avatarImgs.forEach((img) => {
+            img.setAttribute('crossorigin', 'anonymous');
+            if (img.src && !img.src.startsWith('data:')) {
+              try {
+                const testCanvas = document.createElement('canvas');
+                testCanvas.width = img.naturalWidth || 40;
+                testCanvas.height = img.naturalHeight || 40;
+                const ctx = testCanvas.getContext('2d');
+                if (ctx && img.complete && img.naturalWidth > 0) {
+                  ctx.drawImage(img, 0, 0);
+                  img.src = testCanvas.toDataURL('image/png');
+                } else {
+                  const parent = img.parentElement;
+                  const fallbackText = parent?.getAttribute('data-fallback-initial') || '';
+                  if (parent && fallbackText) {
+                    parent.innerHTML = `<span class="w-full h-full flex items-center justify-center font-bold font-serif-clan text-xs">${fallbackText}</span>`;
+                  }
+                }
+              } catch {
+                const parent = img.parentElement;
+                const fallbackText = parent?.getAttribute('data-fallback-initial') || '';
+                if (parent && fallbackText) {
+                  parent.innerHTML = `<span class="w-full h-full flex items-center justify-center font-bold font-serif-clan text-xs">${fallbackText}</span>`;
+                }
+              }
+            }
           });
 
           // Ép màu và gỡ bỏ truncate/max-width cho toàn bộ thẻ HTML
@@ -980,9 +1016,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // 4. Chụp bằng html2canvas với scale: 2 (KHÔNG bật foreignObjectRendering)
+      // 4. Chụp bằng html2canvas với scale: 2 và foreignObjectRendering: true để vẽ chuẩn đường nối SVG
       const canvas = await html2canvas(chartCont, {
         scale: 2,
+        foreignObjectRendering: true,
         useCORS: true,
         allowTaint: true,
         logging: false,
@@ -1019,6 +1056,36 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.opacity = '1';
             (node as unknown as HTMLElement).style.visibility = 'visible';
             (node as unknown as HTMLElement).style.display = '';
+          });
+
+          // Xử lý avatar: đảm bảo crossOrigin và dự phòng chữ cái nếu CORS Storage bị chặn để bảo đảm đường nối và chữ luôn hiển thị đúng
+          const avatarImgs = clonedDoc.querySelectorAll<HTMLImageElement>('img.member-avatar-img, img');
+          avatarImgs.forEach((img) => {
+            img.setAttribute('crossorigin', 'anonymous');
+            if (img.src && !img.src.startsWith('data:')) {
+              try {
+                const testCanvas = document.createElement('canvas');
+                testCanvas.width = img.naturalWidth || 40;
+                testCanvas.height = img.naturalHeight || 40;
+                const ctx = testCanvas.getContext('2d');
+                if (ctx && img.complete && img.naturalWidth > 0) {
+                  ctx.drawImage(img, 0, 0);
+                  img.src = testCanvas.toDataURL('image/png');
+                } else {
+                  const parent = img.parentElement;
+                  const fallbackText = parent?.getAttribute('data-fallback-initial') || '';
+                  if (parent && fallbackText) {
+                    parent.innerHTML = `<span class="w-full h-full flex items-center justify-center font-bold font-serif-clan text-xs">${fallbackText}</span>`;
+                  }
+                }
+              } catch {
+                const parent = img.parentElement;
+                const fallbackText = parent?.getAttribute('data-fallback-initial') || '';
+                if (parent && fallbackText) {
+                  parent.innerHTML = `<span class="w-full h-full flex items-center justify-center font-bold font-serif-clan text-xs">${fallbackText}</span>`;
+                }
+              }
+            }
           });
 
           // Ép màu và gỡ bỏ truncate/max-width cho toàn bộ thẻ HTML
