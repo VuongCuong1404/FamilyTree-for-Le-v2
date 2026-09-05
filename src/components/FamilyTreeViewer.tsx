@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as f3 from 'family-chart';
 import 'family-chart/styles/family-chart.css';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas-pro';
 import { 
   TreePine, 
   Search, 
@@ -658,6 +660,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     const svgView = chartCont.querySelector('svg.main_svg .view') as SVGGElement | null;
     const htmlView = chartCont.querySelector('#htmlSvg .cards_view') as HTMLElement | null;
     const origSvgTransform = svgView?.style.transform || '';
+    const origSvgAttrTransform = svgView?.getAttribute('transform') || '';
     const origHtmlTransform = htmlView?.style.transform || '';
 
     // 4. Áp dụng kích thước mở rộng tạm thời cho container và các lớp hiển thị
@@ -694,7 +697,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     const transformStr = `translate(${tx}px, ${ty}px) scale(${cardScale})`;
     const svgAttrTransform = `translate(${tx}, ${ty}) scale(${cardScale})`;
     if (svgView) {
-      svgView.style.transform = transformStr;
+      svgView.style.transform = ''; // Xóa style.transform trên svgView để không double
       svgView.setAttribute('transform', svgAttrTransform);
     }
     if (htmlView) {
@@ -743,7 +746,11 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       if (svgView) {
         svgView.style.transform = origSvgTransform;
-        svgView.removeAttribute('transform');
+        if (origSvgAttrTransform) {
+          svgView.setAttribute('transform', origSvgAttrTransform);
+        } else {
+          svgView.removeAttribute('transform');
+        }
       }
       if (htmlView) htmlView.style.transform = origHtmlTransform;
 
@@ -786,13 +793,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       // Chờ một nhịp nhỏ để DOM ổn định kích thước
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // 4. Dynamic import html2canvas-pro và jsPDF chỉ khi người dùng bấm xuất PDF
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas-pro'),
-        import('jspdf')
-      ]);
-
-      // 5. Chụp bằng html2canvas với scale: 2 (KHÔNG bật foreignObjectRendering)
+      // 4. Chụp bằng html2canvas với scale: 2 (KHÔNG bật foreignObjectRendering)
       const canvas = await html2canvas(chartCont, {
         scale: 2,
         useCORS: true,
@@ -804,10 +805,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         windowWidth: sourceW,
         windowHeight: sourceH,
         onclone: (clonedDoc) => {
-          // Áp dụng transform cho SVG view và mở overflow cho SVG trong clone
+          // Áp dụng transform cho SVG view bằng setAttribute và xóa style.transform để tránh double
           const clonedSvgView = clonedDoc.querySelector('svg.main_svg .view') as SVGElement | null;
           if (clonedSvgView) {
-            clonedSvgView.style.transform = transformStr;
+            clonedSvgView.style.transform = '';
             clonedSvgView.setAttribute('transform', svgAttrTransform);
           }
           const clonedSvgElem = clonedDoc.querySelector('svg.main_svg') as SVGElement | null;
@@ -822,12 +823,12 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
           ).forEach((el) => {
             const node = el as SVGElement;
             node.setAttribute('stroke', '#92400e');
-            node.setAttribute('stroke-width', '3.5');
+            node.setAttribute('stroke-width', '4');
             node.setAttribute('fill', 'none');
             node.setAttribute('stroke-linecap', 'round');
             node.setAttribute('stroke-linejoin', 'round');
             (node as unknown as HTMLElement).style.stroke = '#92400e';
-            (node as unknown as HTMLElement).style.strokeWidth = '3.5px';
+            (node as unknown as HTMLElement).style.strokeWidth = '4px';
             (node as unknown as HTMLElement).style.opacity = '1';
             (node as unknown as HTMLElement).style.visibility = 'visible';
             (node as unknown as HTMLElement).style.display = '';
@@ -979,10 +980,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // 4. Dynamic import html2canvas-pro
-      const { default: html2canvas } = await import('html2canvas-pro');
-
-      // 5. Chụp bằng html2canvas với scale: 2 (KHÔNG bật foreignObjectRendering)
+      // 4. Chụp bằng html2canvas với scale: 2 (KHÔNG bật foreignObjectRendering)
       const canvas = await html2canvas(chartCont, {
         scale: 2,
         useCORS: true,
@@ -994,10 +992,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         windowWidth: sourceW,
         windowHeight: sourceH,
         onclone: (clonedDoc) => {
-          // Áp dụng transform cho SVG view và mở overflow cho SVG trong clone
+          // Áp dụng transform cho SVG view bằng setAttribute và xóa style.transform để tránh double
           const clonedSvgView = clonedDoc.querySelector('svg.main_svg .view') as SVGElement | null;
           if (clonedSvgView) {
-            clonedSvgView.style.transform = transformStr;
+            clonedSvgView.style.transform = '';
             clonedSvgView.setAttribute('transform', svgAttrTransform);
           }
           const clonedSvgElem = clonedDoc.querySelector('svg.main_svg') as SVGElement | null;
@@ -1012,12 +1010,12 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
           ).forEach((el) => {
             const node = el as SVGElement;
             node.setAttribute('stroke', '#92400e');
-            node.setAttribute('stroke-width', '3.5');
+            node.setAttribute('stroke-width', '4');
             node.setAttribute('fill', 'none');
             node.setAttribute('stroke-linecap', 'round');
             node.setAttribute('stroke-linejoin', 'round');
             (node as unknown as HTMLElement).style.stroke = '#92400e';
-            (node as unknown as HTMLElement).style.strokeWidth = '3.5px';
+            (node as unknown as HTMLElement).style.strokeWidth = '4px';
             (node as unknown as HTMLElement).style.opacity = '1';
             (node as unknown as HTMLElement).style.visibility = 'visible';
             (node as unknown as HTMLElement).style.display = '';
