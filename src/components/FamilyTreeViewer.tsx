@@ -681,8 +681,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     if (svgElem) {
       svgElem.style.width = `${sourceW}px`;
       svgElem.style.height = `${sourceH}px`;
+      svgElem.style.overflow = 'visible';
       svgElem.setAttribute('width', String(sourceW));
       svgElem.setAttribute('height', String(sourceH));
+      svgElem.setAttribute('overflow', 'visible');
       if (svgRect) {
         svgRect.setAttribute('width', String(sourceW));
         svgRect.setAttribute('height', String(sourceH));
@@ -690,12 +692,20 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     }
 
     const transformStr = `translate(${tx}px, ${ty}px) scale(${cardScale})`;
+    const svgAttrTransform = `translate(${tx}, ${ty}) scale(${cardScale})`;
     if (svgView) {
       svgView.style.transform = transformStr;
+      svgView.setAttribute('transform', svgAttrTransform);
     }
     if (htmlView) {
       htmlView.style.transform = transformStr;
     }
+
+    // Đếm và log số lượng đường nối nhánh trong .links_view trước khi chụp
+    const linkPathsCount = chartCont.querySelectorAll(
+      'svg .link, svg .links_view path, svg .links_view line, svg path.link'
+    ).length;
+    console.log(`[setupTreeForExport] Link paths count in .links_view: ${linkPathsCount}`);
 
     // Hàm restore khôi phục trạng thái giao diện ban đầu
     const restore = () => {
@@ -719,6 +729,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       if (svgElem) {
         svgElem.style.width = origSvgWidth;
         svgElem.style.height = origSvgHeight;
+        svgElem.style.overflow = '';
+        svgElem.removeAttribute('overflow');
         if (origSvgAttrW) svgElem.setAttribute('width', origSvgAttrW);
         else svgElem.removeAttribute('width');
         if (origSvgAttrH) svgElem.setAttribute('height', origSvgAttrH);
@@ -729,7 +741,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         }
       }
 
-      if (svgView) svgView.style.transform = origSvgTransform;
+      if (svgView) {
+        svgView.style.transform = origSvgTransform;
+        svgView.removeAttribute('transform');
+      }
       if (htmlView) htmlView.style.transform = origHtmlTransform;
 
       // Fit lại cây hiển thị trên màn hình cho người dùng
@@ -738,7 +753,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       }
     };
 
-    return { sourceW, sourceH, cardScale, restore };
+    return { sourceW, sourceH, cardScale, transformStr, svgAttrTransform, restore };
   };
 
   const handleExportPdf = async () => {
@@ -765,7 +780,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       // 3. BỎ hẳn bước updateTree({ tree_position: 'fit' })
       // Thay vào đó, thiết lập kích thước thật và zoom thẻ ~200px
-      const { sourceW, sourceH, cardScale, restore } = setupTreeForExport(chartCont);
+      const { sourceW, sourceH, cardScale, transformStr, svgAttrTransform, restore } = setupTreeForExport(chartCont);
       layoutRestore = restore;
 
       // Chờ một nhịp nhỏ để DOM ổn định kích thước
@@ -789,6 +804,36 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         windowWidth: sourceW,
         windowHeight: sourceH,
         onclone: (clonedDoc) => {
+          // Áp dụng transform cho SVG view và mở overflow cho SVG trong clone
+          const clonedSvgView = clonedDoc.querySelector('svg.main_svg .view') as SVGElement | null;
+          if (clonedSvgView) {
+            clonedSvgView.style.transform = transformStr;
+            clonedSvgView.setAttribute('transform', svgAttrTransform);
+          }
+          const clonedSvgElem = clonedDoc.querySelector('svg.main_svg') as SVGElement | null;
+          if (clonedSvgElem) {
+            clonedSvgElem.style.overflow = 'visible';
+            clonedSvgElem.setAttribute('overflow', 'visible');
+          }
+
+          // Ép style đường nối nhánh (SVG links)
+          clonedDoc.querySelectorAll(
+            'svg .link, svg .links_view path, svg .links_view line, svg path.link'
+          ).forEach((el) => {
+            const node = el as SVGElement;
+            node.setAttribute('stroke', '#92400e');
+            node.setAttribute('stroke-width', '3.5');
+            node.setAttribute('fill', 'none');
+            node.setAttribute('stroke-linecap', 'round');
+            node.setAttribute('stroke-linejoin', 'round');
+            (node as unknown as HTMLElement).style.stroke = '#92400e';
+            (node as unknown as HTMLElement).style.strokeWidth = '3.5px';
+            (node as unknown as HTMLElement).style.opacity = '1';
+            (node as unknown as HTMLElement).style.visibility = 'visible';
+            (node as unknown as HTMLElement).style.display = '';
+          });
+
+          // Ép màu và gỡ bỏ truncate/max-width cho toàn bộ thẻ HTML
           const all = clonedDoc.querySelectorAll('*');
           all.forEach((el) => {
             const style = clonedDoc.defaultView?.getComputedStyle(el as Element);
@@ -929,7 +974,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       // 3. BỎ hẳn bước updateTree({ tree_position: 'fit' })
       // Thiết lập kích thước thật và zoom thẻ ~200px
-      const { sourceW, sourceH, cardScale, restore } = setupTreeForExport(chartCont);
+      const { sourceW, sourceH, cardScale, transformStr, svgAttrTransform, restore } = setupTreeForExport(chartCont);
       layoutRestore = restore;
 
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -949,6 +994,36 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         windowWidth: sourceW,
         windowHeight: sourceH,
         onclone: (clonedDoc) => {
+          // Áp dụng transform cho SVG view và mở overflow cho SVG trong clone
+          const clonedSvgView = clonedDoc.querySelector('svg.main_svg .view') as SVGElement | null;
+          if (clonedSvgView) {
+            clonedSvgView.style.transform = transformStr;
+            clonedSvgView.setAttribute('transform', svgAttrTransform);
+          }
+          const clonedSvgElem = clonedDoc.querySelector('svg.main_svg') as SVGElement | null;
+          if (clonedSvgElem) {
+            clonedSvgElem.style.overflow = 'visible';
+            clonedSvgElem.setAttribute('overflow', 'visible');
+          }
+
+          // Ép style đường nối nhánh (SVG links)
+          clonedDoc.querySelectorAll(
+            'svg .link, svg .links_view path, svg .links_view line, svg path.link'
+          ).forEach((el) => {
+            const node = el as SVGElement;
+            node.setAttribute('stroke', '#92400e');
+            node.setAttribute('stroke-width', '3.5');
+            node.setAttribute('fill', 'none');
+            node.setAttribute('stroke-linecap', 'round');
+            node.setAttribute('stroke-linejoin', 'round');
+            (node as unknown as HTMLElement).style.stroke = '#92400e';
+            (node as unknown as HTMLElement).style.strokeWidth = '3.5px';
+            (node as unknown as HTMLElement).style.opacity = '1';
+            (node as unknown as HTMLElement).style.visibility = 'visible';
+            (node as unknown as HTMLElement).style.display = '';
+          });
+
+          // Ép màu và gỡ bỏ truncate/max-width cho toàn bộ thẻ HTML
           const all = clonedDoc.querySelectorAll('*');
           all.forEach((el) => {
             const style = clonedDoc.defaultView?.getComputedStyle(el as Element);
