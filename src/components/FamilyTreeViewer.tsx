@@ -577,13 +577,21 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         import('jspdf')
       ]);
 
-      // 5. Chụp bằng html2canvas với scale: 2.5, tối ưu dung lượng và sắc nét
+      // 5. Tính renderScale đồng bộ với JPG
+      const sourceW = chartCont.scrollWidth || chartCont.offsetWidth || 1500;
+      let renderScale = sourceW < 1500 ? 4 : 3;
+      if (sourceW * renderScale > 14000) renderScale = Math.floor(14000 / sourceW);
+      if (renderScale < 2) renderScale = 2;
+      console.log('[ExportPDF] sourceW=', sourceW, 'renderScale=', renderScale);
+
+      // 6. Chụp PNG lossless
       const canvas = await html2canvas(chartCont, {
-        scale: 2.5,
+        scale: renderScale,
         useCORS: true,
         allowTaint: true,
         logging: false,
         backgroundColor: '#faf7f2',
+        foreignObjectRendering: true,
         onclone: (clonedDoc) => {
           const all = clonedDoc.querySelectorAll('*');
           all.forEach((el) => {
@@ -593,8 +601,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             if (style.color) htmlEl.style.color = style.color;
             if (style.backgroundColor) htmlEl.style.backgroundColor = style.backgroundColor;
             if (style.borderColor) htmlEl.style.borderColor = style.borderColor;
-
-            // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
             if (htmlEl.classList.contains('truncate') || style.textOverflow === 'ellipsis') {
               htmlEl.classList.remove('truncate');
               htmlEl.style.overflow = 'visible';
@@ -608,29 +614,27 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.88);
+      console.log('[ExportPDF] canvas.width=', canvas.width, 'canvas.height=', canvas.height);
 
-      // 6. Tính kích thước trang PDF theo đúng kích thước thật của cây đã chụp
+      const imgData = canvas.toDataURL('image/png');
+
+      // 7. Tính kích thước trang PDF theo canvas thực tế (pt = pixel × 72/96)
       const canvasWidth = canvas.width;
       const canvasHeight = canvas.height;
-
-      // Quy đổi px sang pt (point tiêu chuẩn PDF, scale 2.5)
-      const ptPerPx = 72 / (96 * 2.5);
+      const ptPerPx = 72 / 96;
       const contentWidthPt = canvasWidth * ptPerPx;
       const contentHeightPt = canvasHeight * ptPerPx;
-
       const marginPt = 24;
       const headerHeightPt = 68;
-
       const pdfWidth = contentWidthPt + (marginPt * 2);
       const pdfHeight = contentHeightPt + headerHeightPt + (marginPt * 2);
-
       const orientation = pdfWidth >= pdfHeight ? 'landscape' : 'portrait';
 
       const pdf = new jsPDF({
         orientation,
         unit: 'pt',
-        format: [pdfWidth, pdfHeight]
+        format: [pdfWidth, pdfHeight],
+        compress: false,
       });
 
       // Vẽ nền tiêu đề trên đầu trang
@@ -665,17 +669,17 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         marginPt + 45
       );
 
-      // Chèn hình ảnh cây phả hệ với chất lượng JPEG 0.88 tối ưu dung lượng
+      // Chèn hình ảnh cây phả hệ với chất lượng PNG lossless
       pdf.addImage(
         imgData,
-        'JPEG',
+        'PNG',
         marginPt,
         headerHeightPt + marginPt + 8,
         contentWidthPt,
         contentHeightPt
       );
 
-      // 7. Đặt tên file tải về dạng: Gia_Pha_{Ten_Ho}_Toan_Bo_{ngày}.pdf
+      // 8. Đặt tên file tải về dạng: Gia_Pha_{Ten_Ho}_Toan_Bo_{ngày}.pdf
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
       const dateForFile = `${day}_${month}_${year}`;
       const fileName = `Gia_Pha_${sanitizedSurname}_Toan_Bo_${dateForFile}.pdf`;
@@ -718,13 +722,20 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       // 4. Dynamic import html2canvas-pro
       const { default: html2canvas } = await import('html2canvas-pro');
 
-      // 5. Chụp bằng html2canvas với scale: 2.5 và useCORS: true
+      // 5. Tính renderScale dựa trên chiều rộng thật của chart trong DOM, có cap an toàn
+      const sourceW = chartCont.scrollWidth || chartCont.offsetWidth || 1500;
+      let renderScale = sourceW < 1500 ? 4 : 3;
+      if (sourceW * renderScale > 14000) renderScale = Math.floor(14000 / sourceW);
+      if (renderScale < 2) renderScale = 2;
+      console.log('[ExportJPG] sourceW=', sourceW, 'renderScale=', renderScale);
+
       const canvas = await html2canvas(chartCont, {
-        scale: 2.5,
+        scale: renderScale,
         useCORS: true,
         allowTaint: true,
         logging: false,
         backgroundColor: '#faf7f2',
+        foreignObjectRendering: true,
         onclone: (clonedDoc) => {
           const all = clonedDoc.querySelectorAll('*');
           all.forEach((el) => {
@@ -734,8 +745,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             if (style.color) htmlEl.style.color = style.color;
             if (style.backgroundColor) htmlEl.style.backgroundColor = style.backgroundColor;
             if (style.borderColor) htmlEl.style.borderColor = style.borderColor;
-
-            // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
+            if (style.borderTopColor) htmlEl.style.borderTopColor = style.borderTopColor;
+            if (style.borderRightColor) htmlEl.style.borderRightColor = style.borderRightColor;
+            if (style.borderBottomColor) htmlEl.style.borderBottomColor = style.borderBottomColor;
+            if (style.borderLeftColor) htmlEl.style.borderLeftColor = style.borderLeftColor;
             if (htmlEl.classList.contains('truncate') || style.textOverflow === 'ellipsis') {
               htmlEl.classList.remove('truncate');
               htmlEl.style.overflow = 'visible';
@@ -749,11 +762,14 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.88);
+      console.log('[ExportJPG] canvas.width=', canvas.width, 'canvas.height=', canvas.height);
 
-      // 6. Tải thẳng file .jpg về máy bằng thẻ <a>
+      // 7. PNG lossless — không còn DCT artifacts
+      const imgData = canvas.toDataURL('image/png');
+
+      // 8. Tải file .png (đổi đuôi để /OS preview đúng loại ảnh)
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
-      const fileName = `Gia_Pha_${sanitizedSurname}.jpg`;
+      const fileName = `Gia_Pha_${sanitizedSurname}.png`;
 
       const downloadLink = document.createElement('a');
       downloadLink.href = imgData;
@@ -875,7 +891,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                     onClick={handleExportJpg}
                     disabled={isExportingJpg || isExportingPdf}
                     className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-900 hover:from-emerald-800 hover:to-teal-950 text-emerald-100 border border-emerald-500/60 text-xs font-bold shadow-md hover:shadow-lg transition-all hover:scale-105 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Tải ảnh JPG chất lượng cao (scale 2.5x, nén 88% tối ưu dung lượng) để xem và chia sẻ mượt mà"
+                    title="Tải ảnh PNG chất lượng cao (scale 3-4x, lossless) để xem nét và chia sẻ rõ ràng"
                   >
                     {isExportingJpg ? (
                       <>
