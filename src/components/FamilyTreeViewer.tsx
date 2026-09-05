@@ -545,9 +545,207 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     }
   };
 
+  /**
+   * Chuẩn bị layout cây ở kích thước thật và tỉ lệ thẻ ~200px (thay vì co nhỏ để vừa màn hình)
+   * Giúp khi html2canvas chụp ở scale 2x, thẻ đạt ~400px cực kỳ sắc nét, đọc rõ từng chữ khi phóng to.
+   */
+  const setupTreeForExport = (chartCont: HTMLElement) => {
+    // 1. Quét tọa độ min/max của tất cả thẻ và đường nối cây
+    const chartStoreTree = (chartInstanceRef.current as any)?.store?.getTree?.();
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    if (chartStoreTree?.data && Array.isArray(chartStoreTree.data) && chartStoreTree.data.length > 0) {
+      for (const datum of chartStoreTree.data) {
+        if (typeof datum.x === 'number' && typeof datum.y === 'number') {
+          if (datum.x < minX) minX = datum.x;
+          if (datum.x + 280 > maxX) maxX = datum.x + 280;
+          if (datum.y < minY) minY = datum.y;
+          if (datum.y + 145 > maxY) maxY = datum.y + 145;
+        }
+      }
+    }
+
+    // Quét thêm các thẻ DOM .card_cont
+    const cardElements = chartCont.querySelectorAll('.card_cont');
+    cardElements.forEach((el) => {
+      const htmlEl = el as HTMLElement;
+      const transform = htmlEl.style.transform;
+      const match = /translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(transform);
+      if (match) {
+        const x = parseFloat(match[1]);
+        const y = parseFloat(match[2]);
+        if (!isNaN(x) && !isNaN(y)) {
+          if (x < minX) minX = x;
+          if (x + 280 > maxX) maxX = x + 280;
+          if (y < minY) minY = y;
+          if (y + 145 > maxY) maxY = y + 145;
+        }
+      }
+    });
+
+    // Quét đường nối SVG .links_view
+    const linksView = chartCont.querySelector('svg.main_svg .links_view') as SVGGElement | null;
+    if (linksView && typeof linksView.getBBox === 'function') {
+      try {
+        const bbox = linksView.getBBox();
+        if (bbox.width > 0 && bbox.height > 0) {
+          if (bbox.x < minX) minX = bbox.x;
+          if (bbox.x + bbox.width > maxX) maxX = bbox.x + bbox.width;
+          if (bbox.y < minY) minY = bbox.y;
+          if (bbox.y + bbox.height > maxY) maxY = bbox.y + bbox.height;
+        }
+      } catch {
+        // Bỏ qua nếu trình duyệt không hỗ trợ getBBox khi ẩn
+      }
+    }
+
+    // Fallback nếu không tính được tọa độ
+    if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
+      minX = 0;
+      maxX = Math.max(chartCont.scrollWidth || 1600, 1600);
+      minY = 0;
+      maxY = Math.max(chartCont.scrollHeight || 1000, 1000);
+    }
+
+    // 2. Tính tỉ lệ co giãn thẻ: Thẻ gốc 280px, mục tiêu ~200px (180–220px) để chữ to rõ
+    const targetCardWidth = 200;
+    let cardScale = targetCardWidth / 280; // ~0.714
+    const margin = 80;
+    const unscaledW = (maxX - minX) + margin * 2;
+    const unscaledH = (maxY - minY) + margin * 2;
+
+    // Giới hạn an toàn để chiều rộng canvas khi nhân scale 2 không vượt quá 14000px
+    if (unscaledW * cardScale * 2 > 14000) {
+      cardScale = 14000 / (unscaledW * 2);
+    }
+    if (cardScale < 0.4) cardScale = 0.4;
+
+    const sourceW = Math.max(1200, Math.round(unscaledW * cardScale));
+    const sourceH = Math.max(800, Math.round(unscaledH * cardScale));
+
+    const tx = Math.round(margin * cardScale - minX * cardScale);
+    const ty = Math.round(margin * cardScale - minY * cardScale);
+
+    // 3. Lưu lại các style ban đầu để hoàn tác sau khi chụp
+    const origContWidth = chartCont.style.width;
+    const origContHeight = chartCont.style.height;
+    const origContMaxWidth = chartCont.style.maxWidth;
+    const origContMaxHeight = chartCont.style.maxHeight;
+    const origContOverflow = chartCont.style.overflow;
+
+    const f3Canvas = chartCont.querySelector('#f3Canvas') as HTMLElement | null;
+    const origF3Width = f3Canvas?.style.width || '';
+    const origF3Height = f3Canvas?.style.height || '';
+    const origF3Overflow = f3Canvas?.style.overflow || '';
+
+    const htmlSvg = chartCont.querySelector('#htmlSvg') as HTMLElement | null;
+    const origHtmlSvgWidth = htmlSvg?.style.width || '';
+    const origHtmlSvgHeight = htmlSvg?.style.height || '';
+
+    const svgElem = chartCont.querySelector('svg.main_svg') as SVGElement | null;
+    const origSvgWidth = svgElem?.style.width || '';
+    const origSvgHeight = svgElem?.style.height || '';
+    const origSvgAttrW = svgElem?.getAttribute('width');
+    const origSvgAttrH = svgElem?.getAttribute('height');
+
+    const svgRect = svgElem?.querySelector('rect');
+    const origRectW = svgRect?.getAttribute('width');
+    const origRectH = svgRect?.getAttribute('height');
+
+    const svgView = chartCont.querySelector('svg.main_svg .view') as SVGGElement | null;
+    const htmlView = chartCont.querySelector('#htmlSvg .cards_view') as HTMLElement | null;
+    const origSvgTransform = svgView?.style.transform || '';
+    const origHtmlTransform = htmlView?.style.transform || '';
+
+    // 4. Áp dụng kích thước mở rộng tạm thời cho container và các lớp hiển thị
+    chartCont.style.width = `${sourceW}px`;
+    chartCont.style.height = `${sourceH}px`;
+    chartCont.style.maxWidth = 'none';
+    chartCont.style.maxHeight = 'none';
+    chartCont.style.overflow = 'visible';
+
+    if (f3Canvas) {
+      f3Canvas.style.width = `${sourceW}px`;
+      f3Canvas.style.height = `${sourceH}px`;
+      f3Canvas.style.overflow = 'visible';
+    }
+
+    if (htmlSvg) {
+      htmlSvg.style.width = `${sourceW}px`;
+      htmlSvg.style.height = `${sourceH}px`;
+    }
+
+    if (svgElem) {
+      svgElem.style.width = `${sourceW}px`;
+      svgElem.style.height = `${sourceH}px`;
+      svgElem.setAttribute('width', String(sourceW));
+      svgElem.setAttribute('height', String(sourceH));
+      if (svgRect) {
+        svgRect.setAttribute('width', String(sourceW));
+        svgRect.setAttribute('height', String(sourceH));
+      }
+    }
+
+    const transformStr = `translate(${tx}px, ${ty}px) scale(${cardScale})`;
+    if (svgView) {
+      svgView.style.transform = transformStr;
+    }
+    if (htmlView) {
+      htmlView.style.transform = transformStr;
+    }
+
+    // Hàm restore khôi phục trạng thái giao diện ban đầu
+    const restore = () => {
+      chartCont.style.width = origContWidth;
+      chartCont.style.height = origContHeight;
+      chartCont.style.maxWidth = origContMaxWidth;
+      chartCont.style.maxHeight = origContMaxHeight;
+      chartCont.style.overflow = origContOverflow;
+
+      if (f3Canvas) {
+        f3Canvas.style.width = origF3Width;
+        f3Canvas.style.height = origF3Height;
+        f3Canvas.style.overflow = origF3Overflow;
+      }
+
+      if (htmlSvg) {
+        htmlSvg.style.width = origHtmlSvgWidth;
+        htmlSvg.style.height = origHtmlSvgHeight;
+      }
+
+      if (svgElem) {
+        svgElem.style.width = origSvgWidth;
+        svgElem.style.height = origSvgHeight;
+        if (origSvgAttrW) svgElem.setAttribute('width', origSvgAttrW);
+        else svgElem.removeAttribute('width');
+        if (origSvgAttrH) svgElem.setAttribute('height', origSvgAttrH);
+        else svgElem.removeAttribute('height');
+        if (svgRect) {
+          if (origRectW) svgRect.setAttribute('width', origRectW);
+          if (origRectH) svgRect.setAttribute('height', origRectH);
+        }
+      }
+
+      if (svgView) svgView.style.transform = origSvgTransform;
+      if (htmlView) htmlView.style.transform = origHtmlTransform;
+
+      // Fit lại cây hiển thị trên màn hình cho người dùng
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
+      }
+    };
+
+    return { sourceW, sourceH, cardScale, restore };
+  };
+
   const handleExportPdf = async () => {
     if (isExportingPdf) return;
     setIsExportingPdf(true);
+
+    let layoutRestore: (() => void) | null = null;
 
     try {
       // 1. Tự động chuyển cây về chế độ hiện toàn bộ và xóa các bộ lọc
@@ -557,19 +755,21 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       setGenderFilter('all');
       setViewMode('tree');
 
-      // 2. Chờ React re-render và DOM tree cập nhật
-      await new Promise((resolve) => setTimeout(resolve, 450));
-
-      // 3. Reset zoom & fit toàn bộ cây
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
-      }
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      // 2. Chờ React re-render và DOM tree cập nhật đầy đủ các thẻ
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       const chartCont = chartContainerRef.current;
       if (!chartCont) {
         throw new Error('Không tìm thấy vùng hiển thị cây phả hệ.');
       }
+
+      // 3. BỎ hẳn bước updateTree({ tree_position: 'fit' })
+      // Thay vào đó, thiết lập kích thước thật và zoom thẻ ~200px
+      const { sourceW, sourceH, cardScale, restore } = setupTreeForExport(chartCont);
+      layoutRestore = restore;
+
+      // Chờ một nhịp nhỏ để DOM ổn định kích thước
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
       // 4. Dynamic import html2canvas-pro và jsPDF chỉ khi người dùng bấm xuất PDF
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
@@ -577,21 +777,17 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         import('jspdf')
       ]);
 
-      // 5. Tính renderScale đồng bộ với JPG
-      const sourceW = chartCont.scrollWidth || chartCont.offsetWidth || 1500;
-      let renderScale = sourceW < 1500 ? 4 : 3;
-      if (sourceW * renderScale > 14000) renderScale = Math.floor(14000 / sourceW);
-      if (renderScale < 2) renderScale = 2;
-      console.log('[ExportPDF] sourceW=', sourceW, 'renderScale=', renderScale);
-
-      // 6. Chụp PNG lossless
+      // 5. Chụp bằng html2canvas với scale: 2 (KHÔNG bật foreignObjectRendering)
       const canvas = await html2canvas(chartCont, {
-        scale: renderScale,
+        scale: 2,
         useCORS: true,
         allowTaint: true,
         logging: false,
         backgroundColor: '#faf7f2',
-        foreignObjectRendering: true,
+        width: sourceW,
+        height: sourceH,
+        windowWidth: sourceW,
+        windowHeight: sourceH,
         onclone: (clonedDoc) => {
           const all = clonedDoc.querySelectorAll('*');
           all.forEach((el) => {
@@ -601,6 +797,12 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             if (style.color) htmlEl.style.color = style.color;
             if (style.backgroundColor) htmlEl.style.backgroundColor = style.backgroundColor;
             if (style.borderColor) htmlEl.style.borderColor = style.borderColor;
+            if (style.borderTopColor) htmlEl.style.borderTopColor = style.borderTopColor;
+            if (style.borderRightColor) htmlEl.style.borderRightColor = style.borderRightColor;
+            if (style.borderBottomColor) htmlEl.style.borderBottomColor = style.borderBottomColor;
+            if (style.borderLeftColor) htmlEl.style.borderLeftColor = style.borderLeftColor;
+
+            // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
             if (htmlEl.classList.contains('truncate') || style.textOverflow === 'ellipsis') {
               htmlEl.classList.remove('truncate');
               htmlEl.style.overflow = 'visible';
@@ -614,27 +816,32 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      console.log('[ExportPDF] canvas.width=', canvas.width, 'canvas.height=', canvas.height);
+      // Log debug theo yêu cầu
+      console.log(`[handleExportPdf] sourceW=${sourceW}, sourceH=${sourceH}, scale=2, canvas.width=${canvas.width}, canvas.height=${canvas.height}`);
 
-      const imgData = canvas.toDataURL('image/png');
+      // 6. Dùng ảnh JPEG nén chất lượng 0.88 để file nhẹ (~2-6MB) mà vẫn giữ nét từng chữ
+      const imgData = canvas.toDataURL('image/jpeg', 0.88);
 
-      // 7. Tính kích thước trang PDF theo canvas thực tế (pt = pixel × 72/96)
+      // 7. Tính kích thước trang PDF theo canvas thực tế (pt = pixel * 72 / (96 * scale))
       const canvasWidth = canvas.width;
       const canvasHeight = canvas.height;
-      const ptPerPx = 72 / 96;
+      const ptPerPx = 72 / (96 * 2);
       const contentWidthPt = canvasWidth * ptPerPx;
       const contentHeightPt = canvasHeight * ptPerPx;
+
       const marginPt = 24;
       const headerHeightPt = 68;
+
       const pdfWidth = contentWidthPt + (marginPt * 2);
       const pdfHeight = contentHeightPt + headerHeightPt + (marginPt * 2);
+
       const orientation = pdfWidth >= pdfHeight ? 'landscape' : 'portrait';
 
       const pdf = new jsPDF({
         orientation,
         unit: 'pt',
         format: [pdfWidth, pdfHeight],
-        compress: false,
+        compress: true,
       });
 
       // Vẽ nền tiêu đề trên đầu trang
@@ -669,14 +876,16 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         marginPt + 45
       );
 
-      // Chèn hình ảnh cây phả hệ với chất lượng PNG lossless
+      // Chèn hình ảnh cây phả hệ với chất lượng JPEG 0.88
       pdf.addImage(
         imgData,
-        'PNG',
+        'JPEG',
         marginPt,
         headerHeightPt + marginPt + 8,
         contentWidthPt,
-        contentHeightPt
+        contentHeightPt,
+        undefined,
+        'FAST'
       );
 
       // 8. Đặt tên file tải về dạng: Gia_Pha_{Ten_Ho}_Toan_Bo_{ngày}.pdf
@@ -689,6 +898,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       console.error('Lỗi khi xuất PDF phả hệ:', err);
       alert('Không thể xuất file PDF: ' + (err.message || 'Vui lòng thử lại.'));
     } finally {
+      if (layoutRestore) {
+        layoutRestore();
+      }
       setIsExportingPdf(false);
     }
   };
@@ -696,6 +908,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   const handleExportJpg = async () => {
     if (isExportingJpg) return;
     setIsExportingJpg(true);
+
+    let layoutRestore: (() => void) | null = null;
 
     try {
       // 1. Tự động chuyển cây về chế độ hiện toàn bộ và xóa các bộ lọc
@@ -705,37 +919,35 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       setGenderFilter('all');
       setViewMode('tree');
 
-      // 2. Chờ React re-render và DOM tree cập nhật
-      await new Promise((resolve) => setTimeout(resolve, 450));
-
-      // 3. Reset zoom & fit toàn bộ cây
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
-      }
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      // 2. Chờ React re-render và DOM tree cập nhật đầy đủ các thẻ
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       const chartCont = chartContainerRef.current;
       if (!chartCont) {
         throw new Error('Không tìm thấy vùng hiển thị cây phả hệ.');
       }
 
+      // 3. BỎ hẳn bước updateTree({ tree_position: 'fit' })
+      // Thiết lập kích thước thật và zoom thẻ ~200px
+      const { sourceW, sourceH, cardScale, restore } = setupTreeForExport(chartCont);
+      layoutRestore = restore;
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
       // 4. Dynamic import html2canvas-pro
       const { default: html2canvas } = await import('html2canvas-pro');
 
-      // 5. Tính renderScale dựa trên chiều rộng thật của chart trong DOM, có cap an toàn
-      const sourceW = chartCont.scrollWidth || chartCont.offsetWidth || 1500;
-      let renderScale = sourceW < 1500 ? 4 : 3;
-      if (sourceW * renderScale > 14000) renderScale = Math.floor(14000 / sourceW);
-      if (renderScale < 2) renderScale = 2;
-      console.log('[ExportJPG] sourceW=', sourceW, 'renderScale=', renderScale);
-
+      // 5. Chụp bằng html2canvas với scale: 2 (KHÔNG bật foreignObjectRendering)
       const canvas = await html2canvas(chartCont, {
-        scale: renderScale,
+        scale: 2,
         useCORS: true,
         allowTaint: true,
         logging: false,
         backgroundColor: '#faf7f2',
-        foreignObjectRendering: true,
+        width: sourceW,
+        height: sourceH,
+        windowWidth: sourceW,
+        windowHeight: sourceH,
         onclone: (clonedDoc) => {
           const all = clonedDoc.querySelectorAll('*');
           all.forEach((el) => {
@@ -749,6 +961,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             if (style.borderRightColor) htmlEl.style.borderRightColor = style.borderRightColor;
             if (style.borderBottomColor) htmlEl.style.borderBottomColor = style.borderBottomColor;
             if (style.borderLeftColor) htmlEl.style.borderLeftColor = style.borderLeftColor;
+
+            // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
             if (htmlEl.classList.contains('truncate') || style.textOverflow === 'ellipsis') {
               htmlEl.classList.remove('truncate');
               htmlEl.style.overflow = 'visible';
@@ -762,14 +976,15 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      console.log('[ExportJPG] canvas.width=', canvas.width, 'canvas.height=', canvas.height);
+      // Log debug theo yêu cầu
+      console.log(`[handleExportJpg] sourceW=${sourceW}, sourceH=${sourceH}, scale=2, canvas.width=${canvas.width}, canvas.height=${canvas.height}`);
 
-      // 7. PNG lossless — không còn DCT artifacts
-      const imgData = canvas.toDataURL('image/png');
+      // 6. Xuất ảnh định dạng JPEG chất lượng 0.88 (dung lượng ~2–6MB, zoom đọc rõ từng tên)
+      const imgData = canvas.toDataURL('image/jpeg', 0.88);
 
-      // 8. Tải file .png (đổi đuôi để /OS preview đúng loại ảnh)
+      // 7. Tải file Gia_Pha_{Ho}.jpg về máy
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
-      const fileName = `Gia_Pha_${sanitizedSurname}.png`;
+      const fileName = `Gia_Pha_${sanitizedSurname}.jpg`;
 
       const downloadLink = document.createElement('a');
       downloadLink.href = imgData;
@@ -781,6 +996,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       console.error('Lỗi khi tải ảnh JPG phả hệ:', err);
       alert('Không thể tải ảnh JPG: ' + (err.message || 'Vui lòng thử lại.'));
     } finally {
+      if (layoutRestore) {
+        layoutRestore();
+      }
       setIsExportingJpg(false);
     }
   };
@@ -891,7 +1109,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                     onClick={handleExportJpg}
                     disabled={isExportingJpg || isExportingPdf}
                     className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-900 hover:from-emerald-800 hover:to-teal-950 text-emerald-100 border border-emerald-500/60 text-xs font-bold shadow-md hover:shadow-lg transition-all hover:scale-105 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Tải ảnh PNG chất lượng cao (scale 3-4x, lossless) để xem nét và chia sẻ rõ ràng"
+                    title="Tải ảnh JPG chất lượng cao (scale 2x, rõ nét từng tên khi phóng to) để xem và chia sẻ"
                   >
                     {isExportingJpg ? (
                       <>
