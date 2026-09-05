@@ -237,7 +237,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   const [showSpouses, setShowSpouses] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<'tree' | 'generation_list'>('tree');
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
-  const [isExportingPng, setIsExportingPng] = useState<boolean>(false);
+  const [isExportingJpg, setIsExportingJpg] = useState<boolean>(false);
   const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth >= 768;
@@ -577,9 +577,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         import('jspdf')
       ]);
 
-      // 5. Chụp bằng html2canvas với scale: 4 và useCORS: true
+      // 5. Chụp bằng html2canvas với scale: 2.5, tối ưu dung lượng và sắc nét
       const canvas = await html2canvas(chartCont, {
-        scale: 4,
+        scale: 2.5,
         useCORS: true,
         allowTaint: true,
         logging: false,
@@ -593,18 +593,29 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             if (style.color) htmlEl.style.color = style.color;
             if (style.backgroundColor) htmlEl.style.backgroundColor = style.backgroundColor;
             if (style.borderColor) htmlEl.style.borderColor = style.borderColor;
+
+            // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
+            if (htmlEl.classList.contains('truncate') || style.textOverflow === 'ellipsis') {
+              htmlEl.classList.remove('truncate');
+              htmlEl.style.overflow = 'visible';
+              htmlEl.style.textOverflow = 'clip';
+              htmlEl.style.whiteSpace = 'normal';
+            }
+            if (htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
+              htmlEl.style.maxWidth = 'none';
+            }
           });
         },
       });
 
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/jpeg', 0.88);
 
       // 6. Tính kích thước trang PDF theo đúng kích thước thật của cây đã chụp
       const canvasWidth = canvas.width;
       const canvasHeight = canvas.height;
 
-      // Quy đổi px sang pt (point tiêu chuẩn PDF, scale 4)
-      const ptPerPx = 72 / (96 * 4);
+      // Quy đổi px sang pt (point tiêu chuẩn PDF, scale 2.5)
+      const ptPerPx = 72 / (96 * 2.5);
       const contentWidthPt = canvasWidth * ptPerPx;
       const contentHeightPt = canvasHeight * ptPerPx;
 
@@ -654,10 +665,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         marginPt + 45
       );
 
-      // Chèn hình ảnh cây phả hệ độ phân giải cao dạng PNG không nén mất chi tiết
+      // Chèn hình ảnh cây phả hệ với chất lượng JPEG 0.88 tối ưu dung lượng
       pdf.addImage(
         imgData,
-        'PNG',
+        'JPEG',
         marginPt,
         headerHeightPt + marginPt + 8,
         contentWidthPt,
@@ -678,9 +689,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     }
   };
 
-  const handleExportPng = async () => {
-    if (isExportingPng) return;
-    setIsExportingPng(true);
+  const handleExportJpg = async () => {
+    if (isExportingJpg) return;
+    setIsExportingJpg(true);
 
     try {
       // 1. Tự động chuyển cây về chế độ hiện toàn bộ và xóa các bộ lọc
@@ -707,9 +718,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       // 4. Dynamic import html2canvas-pro
       const { default: html2canvas } = await import('html2canvas-pro');
 
-      // 5. Chụp bằng html2canvas với scale: 4 và useCORS: true
+      // 5. Chụp bằng html2canvas với scale: 2.5 và useCORS: true
       const canvas = await html2canvas(chartCont, {
-        scale: 4,
+        scale: 2.5,
         useCORS: true,
         allowTaint: true,
         logging: false,
@@ -723,15 +734,26 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             if (style.color) htmlEl.style.color = style.color;
             if (style.backgroundColor) htmlEl.style.backgroundColor = style.backgroundColor;
             if (style.borderColor) htmlEl.style.borderColor = style.borderColor;
+
+            // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
+            if (htmlEl.classList.contains('truncate') || style.textOverflow === 'ellipsis') {
+              htmlEl.classList.remove('truncate');
+              htmlEl.style.overflow = 'visible';
+              htmlEl.style.textOverflow = 'clip';
+              htmlEl.style.whiteSpace = 'normal';
+            }
+            if (htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
+              htmlEl.style.maxWidth = 'none';
+            }
           });
         },
       });
 
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/jpeg', 0.88);
 
-      // 6. Tải thẳng file .png về máy bằng thẻ <a>
+      // 6. Tải thẳng file .jpg về máy bằng thẻ <a>
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
-      const fileName = `Gia_Pha_${sanitizedSurname}.png`;
+      const fileName = `Gia_Pha_${sanitizedSurname}.jpg`;
 
       const downloadLink = document.createElement('a');
       downloadLink.href = imgData;
@@ -740,10 +762,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       downloadLink.click();
       document.body.removeChild(downloadLink);
     } catch (err: any) {
-      console.error('Lỗi khi tải ảnh PNG phả hệ:', err);
-      alert('Không thể tải ảnh PNG: ' + (err.message || 'Vui lòng thử lại.'));
+      console.error('Lỗi khi tải ảnh JPG phả hệ:', err);
+      alert('Không thể tải ảnh JPG: ' + (err.message || 'Vui lòng thử lại.'));
     } finally {
-      setIsExportingPng(false);
+      setIsExportingJpg(false);
     }
   };
 
@@ -844,27 +866,27 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 </button>
               </div>
 
-              {/* PDF & PNG Export Buttons: ONLY shown when currentUserRole === 'admin' */}
+              {/* PDF & JPG Export Buttons: ONLY shown when currentUserRole === 'admin' */}
               {isAdmin && (
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {/* PNG Button */}
+                  {/* JPG Button */}
                   <button
                     type="button"
-                    onClick={handleExportPng}
-                    disabled={isExportingPng || isExportingPdf}
+                    onClick={handleExportJpg}
+                    disabled={isExportingJpg || isExportingPdf}
                     className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-900 hover:from-emerald-800 hover:to-teal-950 text-emerald-100 border border-emerald-500/60 text-xs font-bold shadow-md hover:shadow-lg transition-all hover:scale-105 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Tải ảnh PNG không nén (scale 4x) để xem và pinch-to-zoom mượt mà trên điện thoại/máy tính"
+                    title="Tải ảnh JPG chất lượng cao (scale 2.5x, nén 88% tối ưu dung lượng) để xem và chia sẻ mượt mà"
                   >
-                    {isExportingPng ? (
+                    {isExportingJpg ? (
                       <>
                         <Loader2 className="w-3.5 h-3.5 text-emerald-300 animate-spin" />
-                        <span className="hidden sm:inline">Đang tạo PNG...</span>
-                        <span className="sm:hidden">PNG...</span>
+                        <span className="hidden sm:inline">Đang tạo JPG...</span>
+                        <span className="sm:hidden">JPG...</span>
                       </>
                     ) : (
                       <>
                         <ImageIcon className="w-3.5 h-3.5 text-emerald-300" />
-                        <span>Tải Ảnh PNG</span>
+                        <span>Tải ảnh JPG</span>
                       </>
                     )}
                   </button>
@@ -873,9 +895,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                   <button
                     type="button"
                     onClick={handleExportPdf}
-                    disabled={isExportingPdf || isExportingPng}
+                    disabled={isExportingPdf || isExportingJpg}
                     className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 text-amber-100 border border-amber-500/60 text-xs font-bold shadow-md hover:shadow-lg transition-all hover:scale-105 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Xuất toàn bộ cây phả hệ độ phân giải cao ra tệp PDF"
+                    title="Xuất toàn bộ cây phả hệ ra tệp PDF"
                   >
                     {isExportingPdf ? (
                       <>
