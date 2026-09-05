@@ -357,14 +357,29 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
           ? member.spouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ')
           : (member.spouse || ''));
 
+    // Xác định đúng Cha / Mẹ theo giới tính thật (tránh nhầm lẫn khi parentId là mẹ hoặc motherName ghi nhầm tên cha)
+    const linkedParent = member.parentId ? members.find(x => x.id === member.parentId) : null;
+    const linkedMotherById = member.motherId ? members.find(x => x.id === member.motherId) : null;
+    const father = linkedParent?.gender === 'male' ? linkedParent : (linkedMotherById?.gender === 'male' ? linkedMotherById : null);
+    const mother = linkedParent?.gender === 'female' ? linkedParent : (linkedMotherById?.gender === 'female' ? linkedMotherById : null);
+
+    let actualMotherName = '';
+    if (mother?.fullName) {
+      actualMotherName = mother.fullName;
+    } else if (member.motherName) {
+      const trimmedMotherName = member.motherName.trim();
+      const fatherFullName = father?.fullName?.trim();
+      if (!fatherFullName || trimmedMotherName.toLowerCase() !== fatherFullName.toLowerCase()) {
+        actualMotherName = trimmedMotherName;
+      }
+    }
+
     // Small secondary label "Mẹ: {tên}" for children
     let motherHtml = '';
-    const motherMember = member.motherId ? members.find(x => x.id === member.motherId) : undefined;
-    const motherName = motherMember ? motherMember.fullName : (member.motherName || '');
-    if (motherName) {
-      motherHtml = `<div class="text-[10px] font-semibold text-rose-800 bg-rose-50/90 border border-rose-200/80 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 max-w-full truncate" title="Thân mẫu: ${escapeHtml(motherName)}">
+    if (actualMotherName) {
+      motherHtml = `<div class="text-[10px] font-semibold text-rose-800 bg-rose-50/90 border border-rose-200/80 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 max-w-full truncate" title="Thân mẫu: ${escapeHtml(actualMotherName)}">
           <span class="text-rose-500 font-bold shrink-0">Mẹ:</span>
-          <span class="truncate font-medium text-stone-800">${escapeHtml(motherName)}</span>
+          <span class="truncate font-medium text-stone-800">${escapeHtml(actualMotherName)}</span>
         </div>`;
     }
 
@@ -567,6 +582,17 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         allowTaint: true,
         logging: false,
         backgroundColor: '#faf7f2',
+        onclone: (clonedDoc) => {
+          const all = clonedDoc.querySelectorAll('*');
+          all.forEach((el) => {
+            const style = clonedDoc.defaultView?.getComputedStyle(el as Element);
+            if (!style) return;
+            const htmlEl = el as HTMLElement;
+            if (style.color) htmlEl.style.color = style.color;
+            if (style.backgroundColor) htmlEl.style.backgroundColor = style.backgroundColor;
+            if (style.borderColor) htmlEl.style.borderColor = style.borderColor;
+          });
+        },
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
