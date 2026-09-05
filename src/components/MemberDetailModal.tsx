@@ -51,15 +51,11 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
   const canEdit = currentUserRole === 'admin' || currentUserRole === 'support';
   const canDelete = currentUserRole === 'admin';
 
-  // Find Parent
-  const parent = useMemo(() => {
-    return member.parentId ? allMembers.find(m => m.id === member.parentId) : null;
-  }, [member, allMembers]);
-
-  // Find Mother
-  const mother = useMemo(() => {
-    return member.motherId ? allMembers.find(m => m.id === member.motherId) : null;
-  }, [member, allMembers]);
+  // Find Parents based on real gender
+  const linkedParent = member.parentId ? allMembers.find(m => m.id === member.parentId) : null;
+  const linkedMotherById = member.motherId ? allMembers.find(m => m.id === member.motherId) : null;
+  const father = linkedParent?.gender === 'male' ? linkedParent : (linkedMotherById?.gender === 'male' ? linkedMotherById : null);
+  const mother = linkedParent?.gender === 'female' ? linkedParent : (linkedMotherById?.gender === 'female' ? linkedMotherById : null);
 
   // Find Linked Spouses
   const linkedSpouseMembers = useMemo(() => {
@@ -71,7 +67,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
 
   // Find Children
   const children = useMemo(() => {
-    return allMembers.filter(m => m.parentId === member.id);
+    return allMembers.filter(m => m.parentId === member.id || m.motherId === member.id);
   }, [member, allMembers]);
 
   // Direct Ancestor Lineage Path (from Thủy Tổ to current member)
@@ -194,13 +190,13 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
             {/* Father info */}
             <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200">
               <span className="text-stone-400 font-medium block mb-1">Thân phụ (Cha):</span>
-              {parent ? (
+              {father ? (
                 <button
-                  onClick={() => onSelectMember(parent)}
+                  onClick={() => onSelectMember(father)}
                   className="font-bold text-stone-900 hover:text-amber-800 flex items-center gap-1 text-sm text-left group"
                 >
-                  <span>{parent.fullName}</span>
-                  <span className="text-xs text-stone-500 font-normal">({parent.title || `Đời ${parent.generation}`})</span>
+                  <span>{father.fullName}</span>
+                  <span className="text-xs text-stone-500 font-normal">({father.title || `Đời ${father.generation}`})</span>
                   <ChevronRight className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
                 </button>
               ) : (

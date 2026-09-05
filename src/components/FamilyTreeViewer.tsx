@@ -43,6 +43,41 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
+// Convert integer to Roman numeral dynamically without bounds
+function toRomanNumeral(num: number): string {
+  if (num <= 0) return String(num);
+  const romanLookup: [number, string][] = [
+    [1000, 'M'],
+    [900, 'CM'],
+    [500, 'D'],
+    [400, 'CD'],
+    [100, 'C'],
+    [90, 'XC'],
+    [50, 'L'],
+    [40, 'XL'],
+    [10, 'X'],
+    [9, 'IX'],
+    [5, 'V'],
+    [4, 'IV'],
+    [1, 'I'],
+  ];
+  let result = '';
+  let n = num;
+  for (const [val, roman] of romanLookup) {
+    while (n >= val) {
+      result += roman;
+      n -= val;
+    }
+  }
+  return result || String(num);
+}
+
+function getGenerationRomanTitle(genNum: number): string {
+  const roman = toRomanNumeral(genNum);
+  if (genNum === 1) return `${roman} (Cụ Thủy Tổ)`;
+  return roman;
+}
+
 // Filter members while guaranteeing tree connectivity to the root
 function filterMembersForTree(
   members: ClanMember[],
@@ -666,7 +701,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               <TreePine className="w-5 h-5 text-amber-400 shrink-0" />
               <div>
                 <h1 className="text-base sm:text-lg md:text-xl font-bold font-serif-clan text-white leading-tight">
-                  Sơ Đồ Phả Hệ 7 Thế Hệ — {clanInfo.clanSurname} Tộc
+                  Sơ Đồ Phả Hệ — {clanInfo.clanSurname.toUpperCase()} TỘC
                 </h1>
                 <p className="text-[11px] text-amber-200/70 hidden sm:block">
                   Cập nhật đầy đủ Giới tính (Nam ♂ / Nữ ♀), Tuổi hiện tại & Hưởng thọ cho toàn gia tộc
@@ -1028,7 +1063,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
               if (list.length === 0) return null;
 
-              const romanGen = ['', 'I (Cụ Thủy Tổ)', 'II', 'III', 'IV', 'V (Đương Đại)', 'VI (Thế Hệ Trẻ)', 'VII (Hậu Duệ)'][genNum] || genNum;
+              const romanGen = getGenerationRomanTitle(genNum);
 
               return (
                 <div key={genNum} className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 shadow-md">
