@@ -232,6 +232,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   currentUserRole,
   onOpenAuth,
 }) => {
+  const maxGeneration = useMemo(() => {
+    return Math.max(...members.map((m) => m.generation || 1), 1);
+  }, [members]);
+
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [selectedGenFilter, setSelectedGenFilter] = useState<number | 'all'>('all');
@@ -334,9 +338,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       return `<div class="p-3 bg-white rounded-xl shadow border text-stone-600 text-xs">Thành viên</div>`;
     }
 
-    const romanGen = [
-      '', 'I (Thủy Tổ)', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'
-    ][member.generation] || member.generation;
+    const romanGen = member.generation === 1 ? 'I (Thủy Tổ)' : toRomanNumeral(member.generation);
 
     const ageInfo = calculateAgeInfo(member.birthYear, member.deathYear, member.isAlive);
     const genderVisual = getGenderVisuals(member.gender, member.generation);
@@ -499,8 +501,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       chart.setCardXSpacing(310);
       chart.setCardYSpacing(210);
       chart.setSingleParentEmptyCard(false);
-      chart.setAncestryDepth(10);
-      chart.setProgenyDepth(10);
+      chart.setAncestryDepth(Math.max(10, maxGeneration + 2));
+      chart.setProgenyDepth(Math.max(10, maxGeneration + 2));
 
       const f3Card = chart.setCardHtml();
       f3Card.setCardDim({ w: 280, h: 145 });
@@ -1221,7 +1223,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
                 <div className="flex items-center gap-1.5 bg-stone-900/80 text-amber-300 px-2.5 py-1 rounded-lg border border-amber-900/40 ml-auto hidden lg:flex">
                   <Layers className="w-3.5 h-3.5" />
-                  <span>7 Thế hệ • {branches.length} Chi Phái</span>
+                  <span>{maxGeneration} Thế hệ • {branches.length} Chi Phái</span>
                 </div>
               </div>
 
@@ -1312,14 +1314,11 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                     onChange={(e) => setSelectedGenFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                     className="bg-stone-900 border border-amber-900/60 rounded-lg px-2.5 py-1 text-amber-100 text-xs focus:outline-none"
                   >
-                    <option value="all">Tất cả Đời (1 - 7)</option>
+                    <option value="all">Tất cả Đời (1 - {maxGeneration})</option>
                     <option value={1}>Đời 1 (Thủy Tổ)</option>
-                    <option value={2}>Đến Đời 2</option>
-                    <option value={3}>Đến Đời 3</option>
-                    <option value={4}>Đến Đời 4</option>
-                    <option value={5}>Đến Đời 5</option>
-                    <option value={6}>Đến Đời 6</option>
-                    <option value={7}>Đến Đời 7</option>
+                    {Array.from({ length: Math.max(0, maxGeneration - 1) }, (_, i) => i + 2).map((gen) => (
+                      <option key={gen} value={gen}>Đến Đời {gen}</option>
+                    ))}
                   </select>
                 </div>
 
