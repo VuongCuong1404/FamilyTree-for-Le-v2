@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as f3 from 'family-chart';
 import 'family-chart/styles/family-chart.css';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas-pro';
+import { domToJpeg } from 'modern-screenshot';
 import { 
   TreePine, 
   Search, 
@@ -554,7 +554,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
   /**
    * Chuẩn bị layout cây ở kích thước thật và tỉ lệ thẻ ~200px (thay vì co nhỏ để vừa màn hình)
-   * Giúp khi html2canvas chụp ở scale 2x, thẻ đạt ~400px cực kỳ sắc nét, đọc rõ từng chữ khi phóng to.
+   * Giúp khi modern-screenshot chụp ở scale 2x, thẻ đạt ~400px cực kỳ sắc nét, đọc rõ từng chữ khi phóng to.
    */
   const setupTreeForExport = (chartCont: HTMLElement) => {
     // 1. Quét tọa độ min/max của tất cả thẻ và đường nối cây
@@ -798,33 +798,28 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       // Chờ một nhịp nhỏ để DOM ổn định kích thước
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // 4. Chụp bằng html2canvas với scale: 2 và foreignObjectRendering: true để vẽ chuẩn đường nối SVG
-      const canvas = await html2canvas(chartCont, {
-        scale: 2,
-        foreignObjectRendering: true,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#faf7f2',
+      // 4. Chụp bằng domToJpeg của modern-screenshot với scale: 2
+      const imgData = await domToJpeg(chartCont, {
         width: sourceW,
         height: sourceH,
-        windowWidth: sourceW,
-        windowHeight: sourceH,
-        onclone: (clonedDoc) => {
-          // Áp dụng transform cho SVG view bằng setAttribute và xóa style.transform để tránh double
-          const clonedSvgView = clonedDoc.querySelector('svg.main_svg .view') as SVGElement | null;
+        scale: 2,
+        quality: 0.88,
+        backgroundColor: '#faf7f2',
+        onCloneNode: (cloned) => {
+          if (!cloned || !(cloned instanceof Element)) return;
+          const clonedSvgView = cloned.querySelector('svg.main_svg .view') as SVGElement | null;
           if (clonedSvgView) {
             clonedSvgView.style.transform = '';
             clonedSvgView.setAttribute('transform', svgAttrTransform);
           }
-          const clonedSvgElem = clonedDoc.querySelector('svg.main_svg') as SVGElement | null;
+          const clonedSvgElem = cloned.querySelector('svg.main_svg') as SVGElement | null;
           if (clonedSvgElem) {
             clonedSvgElem.style.overflow = 'visible';
             clonedSvgElem.setAttribute('overflow', 'visible');
           }
 
           // Ép style đường nối nhánh (SVG links)
-          clonedDoc.querySelectorAll(
+          cloned.querySelectorAll(
             'svg .link, svg .links_view path, svg .links_view line, svg path.link'
           ).forEach((el) => {
             const node = el as SVGElement;
@@ -840,76 +835,28 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.display = '';
           });
 
-          // Xử lý avatar: đảm bảo crossOrigin và dự phòng chữ cái nếu CORS Storage bị chặn để bảo đảm đường nối và chữ luôn hiển thị đúng
-          const avatarImgs = clonedDoc.querySelectorAll<HTMLImageElement>('img.member-avatar-img, img');
-          avatarImgs.forEach((img) => {
-            img.setAttribute('crossorigin', 'anonymous');
-            if (img.src && !img.src.startsWith('data:')) {
-              try {
-                const testCanvas = document.createElement('canvas');
-                testCanvas.width = img.naturalWidth || 40;
-                testCanvas.height = img.naturalHeight || 40;
-                const ctx = testCanvas.getContext('2d');
-                if (ctx && img.complete && img.naturalWidth > 0) {
-                  ctx.drawImage(img, 0, 0);
-                  img.src = testCanvas.toDataURL('image/png');
-                } else {
-                  const parent = img.parentElement;
-                  const fallbackText = parent?.getAttribute('data-fallback-initial') || '';
-                  if (parent && fallbackText) {
-                    parent.innerHTML = `<span class="w-full h-full flex items-center justify-center font-bold font-serif-clan text-xs">${fallbackText}</span>`;
-                  }
-                }
-              } catch {
-                const parent = img.parentElement;
-                const fallbackText = parent?.getAttribute('data-fallback-initial') || '';
-                if (parent && fallbackText) {
-                  parent.innerHTML = `<span class="w-full h-full flex items-center justify-center font-bold font-serif-clan text-xs">${fallbackText}</span>`;
-                }
-              }
-            }
-          });
-
-          // Ép màu và gỡ bỏ truncate/max-width cho toàn bộ thẻ HTML
-          const all = clonedDoc.querySelectorAll('*');
-          all.forEach((el) => {
-            const style = clonedDoc.defaultView?.getComputedStyle(el as Element);
-            if (!style) return;
+          // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
+          cloned.querySelectorAll('*').forEach((el) => {
             const htmlEl = el as HTMLElement;
-            if (style.color) htmlEl.style.color = style.color;
-            if (style.backgroundColor) htmlEl.style.backgroundColor = style.backgroundColor;
-            if (style.borderColor) htmlEl.style.borderColor = style.borderColor;
-            if (style.borderTopColor) htmlEl.style.borderTopColor = style.borderTopColor;
-            if (style.borderRightColor) htmlEl.style.borderRightColor = style.borderRightColor;
-            if (style.borderBottomColor) htmlEl.style.borderBottomColor = style.borderBottomColor;
-            if (style.borderLeftColor) htmlEl.style.borderLeftColor = style.borderLeftColor;
-
-            // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
-            if (htmlEl.classList.contains('truncate') || style.textOverflow === 'ellipsis') {
+            if (htmlEl.classList && htmlEl.classList.contains('truncate')) {
               htmlEl.classList.remove('truncate');
               htmlEl.style.overflow = 'visible';
               htmlEl.style.textOverflow = 'clip';
               htmlEl.style.whiteSpace = 'normal';
             }
-            if (htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
+            if (htmlEl.style && htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
               htmlEl.style.maxWidth = 'none';
             }
           });
         },
       });
 
-      // Log debug theo yêu cầu
-      console.log(`[handleExportPdf] sourceW=${sourceW}, sourceH=${sourceH}, scale=2, canvas.width=${canvas.width}, canvas.height=${canvas.height}`);
+      console.log(`[handleExportPdf] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=2`);
 
-      // 6. Dùng ảnh JPEG nén chất lượng 0.88 để file nhẹ (~2-6MB) mà vẫn giữ nét từng chữ
-      const imgData = canvas.toDataURL('image/jpeg', 0.88);
-
-      // 7. Tính kích thước trang PDF theo canvas thực tế (pt = pixel * 72 / (96 * scale))
-      const canvasWidth = canvas.width;
-      const canvasHeight = canvas.height;
-      const ptPerPx = 72 / (96 * 2);
-      const contentWidthPt = canvasWidth * ptPerPx;
-      const contentHeightPt = canvasHeight * ptPerPx;
+      // 5. Tính kích thước trang PDF theo kích thước thực tế (pt = pixel * 72 / 96)
+      const ptPerPx = 72 / 96;
+      const contentWidthPt = sourceW * ptPerPx;
+      const contentHeightPt = sourceH * ptPerPx;
 
       const marginPt = 24;
       const headerHeightPt = 68;
@@ -1016,33 +963,28 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // 4. Chụp bằng html2canvas với scale: 2 và foreignObjectRendering: true để vẽ chuẩn đường nối SVG
-      const canvas = await html2canvas(chartCont, {
-        scale: 2,
-        foreignObjectRendering: true,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#faf7f2',
+      // 4. Chụp bằng domToJpeg của modern-screenshot với scale: 2
+      const imgData = await domToJpeg(chartCont, {
         width: sourceW,
         height: sourceH,
-        windowWidth: sourceW,
-        windowHeight: sourceH,
-        onclone: (clonedDoc) => {
-          // Áp dụng transform cho SVG view bằng setAttribute và xóa style.transform để tránh double
-          const clonedSvgView = clonedDoc.querySelector('svg.main_svg .view') as SVGElement | null;
+        scale: 2,
+        quality: 0.88,
+        backgroundColor: '#faf7f2',
+        onCloneNode: (cloned) => {
+          if (!cloned || !(cloned instanceof Element)) return;
+          const clonedSvgView = cloned.querySelector('svg.main_svg .view') as SVGElement | null;
           if (clonedSvgView) {
             clonedSvgView.style.transform = '';
             clonedSvgView.setAttribute('transform', svgAttrTransform);
           }
-          const clonedSvgElem = clonedDoc.querySelector('svg.main_svg') as SVGElement | null;
+          const clonedSvgElem = cloned.querySelector('svg.main_svg') as SVGElement | null;
           if (clonedSvgElem) {
             clonedSvgElem.style.overflow = 'visible';
             clonedSvgElem.setAttribute('overflow', 'visible');
           }
 
           // Ép style đường nối nhánh (SVG links)
-          clonedDoc.querySelectorAll(
+          cloned.querySelectorAll(
             'svg .link, svg .links_view path, svg .links_view line, svg path.link'
           ).forEach((el) => {
             const node = el as SVGElement;
@@ -1058,71 +1000,25 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.display = '';
           });
 
-          // Xử lý avatar: đảm bảo crossOrigin và dự phòng chữ cái nếu CORS Storage bị chặn để bảo đảm đường nối và chữ luôn hiển thị đúng
-          const avatarImgs = clonedDoc.querySelectorAll<HTMLImageElement>('img.member-avatar-img, img');
-          avatarImgs.forEach((img) => {
-            img.setAttribute('crossorigin', 'anonymous');
-            if (img.src && !img.src.startsWith('data:')) {
-              try {
-                const testCanvas = document.createElement('canvas');
-                testCanvas.width = img.naturalWidth || 40;
-                testCanvas.height = img.naturalHeight || 40;
-                const ctx = testCanvas.getContext('2d');
-                if (ctx && img.complete && img.naturalWidth > 0) {
-                  ctx.drawImage(img, 0, 0);
-                  img.src = testCanvas.toDataURL('image/png');
-                } else {
-                  const parent = img.parentElement;
-                  const fallbackText = parent?.getAttribute('data-fallback-initial') || '';
-                  if (parent && fallbackText) {
-                    parent.innerHTML = `<span class="w-full h-full flex items-center justify-center font-bold font-serif-clan text-xs">${fallbackText}</span>`;
-                  }
-                }
-              } catch {
-                const parent = img.parentElement;
-                const fallbackText = parent?.getAttribute('data-fallback-initial') || '';
-                if (parent && fallbackText) {
-                  parent.innerHTML = `<span class="w-full h-full flex items-center justify-center font-bold font-serif-clan text-xs">${fallbackText}</span>`;
-                }
-              }
-            }
-          });
-
-          // Ép màu và gỡ bỏ truncate/max-width cho toàn bộ thẻ HTML
-          const all = clonedDoc.querySelectorAll('*');
-          all.forEach((el) => {
-            const style = clonedDoc.defaultView?.getComputedStyle(el as Element);
-            if (!style) return;
+          // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
+          cloned.querySelectorAll('*').forEach((el) => {
             const htmlEl = el as HTMLElement;
-            if (style.color) htmlEl.style.color = style.color;
-            if (style.backgroundColor) htmlEl.style.backgroundColor = style.backgroundColor;
-            if (style.borderColor) htmlEl.style.borderColor = style.borderColor;
-            if (style.borderTopColor) htmlEl.style.borderTopColor = style.borderTopColor;
-            if (style.borderRightColor) htmlEl.style.borderRightColor = style.borderRightColor;
-            if (style.borderBottomColor) htmlEl.style.borderBottomColor = style.borderBottomColor;
-            if (style.borderLeftColor) htmlEl.style.borderLeftColor = style.borderLeftColor;
-
-            // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
-            if (htmlEl.classList.contains('truncate') || style.textOverflow === 'ellipsis') {
+            if (htmlEl.classList && htmlEl.classList.contains('truncate')) {
               htmlEl.classList.remove('truncate');
               htmlEl.style.overflow = 'visible';
               htmlEl.style.textOverflow = 'clip';
               htmlEl.style.whiteSpace = 'normal';
             }
-            if (htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
+            if (htmlEl.style && htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
               htmlEl.style.maxWidth = 'none';
             }
           });
         },
       });
 
-      // Log debug theo yêu cầu
-      console.log(`[handleExportJpg] sourceW=${sourceW}, sourceH=${sourceH}, scale=2, canvas.width=${canvas.width}, canvas.height=${canvas.height}`);
+      console.log(`[handleExportJpg] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=2`);
 
-      // 6. Xuất ảnh định dạng JPEG chất lượng 0.88 (dung lượng ~2–6MB, zoom đọc rõ từng tên)
-      const imgData = canvas.toDataURL('image/jpeg', 0.88);
-
-      // 7. Tải file Gia_Pha_{Ho}.jpg về máy
+      // 5. Tải file Gia_Pha_{Ho}.jpg về máy (chất lượng JPEG 0.88, dung lượng ~2–6MB, zoom đọc rõ từng tên)
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
       const fileName = `Gia_Pha_${sanitizedSurname}.jpg`;
 
