@@ -60,18 +60,36 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
   const [restingPlace, setRestingPlace] = useState('');
   const [achievements, setAchievements] = useState('');
 
-  // Find father and his spouses to determine if "Con của bà nào" should appear
-  const currentFatherId = parentId || parentToAssign?.id;
+  // Find father and his spouses to determine if "Chọn Thân mẫu" should appear
+  const currentFatherId = parentId || (parentToAssign?.gender === 'male' ? parentToAssign.id : null);
   const currentFather = useMemo(() => {
     return currentFatherId ? allMembers.find(m => m.id === currentFatherId) : null;
   }, [currentFatherId, allMembers]);
 
   const fatherSpouseIds = useMemo(() => {
-    if (!currentFather) return [];
-    const direct = currentFather.spouseIds || [];
-    const reverse = allMembers.filter(m => m.id !== currentFather.id && m.spouseIds?.includes(currentFather.id)).map(m => m.id);
-    return Array.from(new Set([...direct, ...reverse]));
-  }, [currentFather, allMembers]);
+    if (currentFather) {
+      const direct = currentFather.spouseIds || [];
+      const reverse = allMembers.filter(m => m.id !== currentFather.id && m.spouseIds?.includes(currentFather.id)).map(m => m.id);
+      return Array.from(new Set([...direct, ...reverse]));
+    }
+    if (parentToAssign?.gender === 'female') {
+      const direct = parentToAssign.spouseIds || [];
+      const reverse = allMembers.filter(m => m.id !== parentToAssign.id && m.spouseIds?.includes(parentToAssign.id)).map(m => m.id);
+      return Array.from(new Set([...direct, ...reverse]));
+    }
+    return [];
+  }, [currentFather, allMembers, parentToAssign]);
+
+  // If father has spouses, automatically ensure motherId is set to valid spouse
+  useEffect(() => {
+    if (fatherSpouseIds.length >= 1) {
+      if (!motherId || !fatherSpouseIds.includes(motherId)) {
+        setMotherId(fatherSpouseIds[0]);
+        const mMem = allMembers.find(m => m.id === fatherSpouseIds[0]);
+        if (mMem) setMotherName(mMem.fullName);
+      }
+    }
+  }, [fatherSpouseIds, motherId, allMembers]);
 
   // Candidates for spouse link autocomplete
   const candidateSpouseMembers = useMemo(() => {
@@ -424,21 +442,23 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             </select>
           </div>
 
-          {/* If Father has >= 2 spouses: Mother Selection Dropdown (Con của bà nào) */}
-          {fatherSpouseIds.length >= 2 && (
+          {/* If Father has >= 1 linked spouses: Mother Selection Dropdown */}
+          {fatherSpouseIds.length >= 1 ? (
             <div className="p-3.5 rounded-2xl bg-rose-50/90 border border-rose-300 shadow-xs space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-stone-900 font-bold flex items-center gap-1.5 text-xs">
                   <Heart className="w-4 h-4 text-rose-600 fill-rose-500/20" />
-                  <span>Con của bà nào? (Chọn Thân mẫu từ {fatherSpouseIds.length} người vợ đã liên kết):</span>
+                  <span>
+                    Chọn Thân mẫu ({fatherSpouseIds.length === 1 ? '1 phối ngẫu đã liên kết' : `${fatherSpouseIds.length} phối ngẫu đã liên kết`}):
+                  </span>
                 </label>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-200 text-rose-950 border border-rose-300">
-                  Bắt buộc chọn
+                  {fatherSpouseIds.length >= 2 ? 'Bắt buộc chọn' : 'Đã liên kết'}
                 </span>
               </div>
 
               <select
-                value={motherId || ''}
+                value={motherId || (fatherSpouseIds.length === 1 ? fatherSpouseIds[0] : '')}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val) {
@@ -447,11 +467,14 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                     if (found) setMotherName(found.fullName);
                   } else {
                     setMotherId(null);
+                    setMotherName('');
                   }
                 }}
-                className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-rose-300 text-stone-900 font-semibold focus:outline-none focus:border-rose-600 shadow-xs"
+                className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-rose-300 text-stone-900 font-semibold focus:outline-none focus:border-rose-600 shadow-xs cursor-pointer"
               >
-                <option value="">-- Vui lòng chọn Thân mẫu --</option>
+                {fatherSpouseIds.length >= 2 && (
+                  <option value="">-- Vui lòng chọn Thân mẫu --</option>
+                )}
                 {fatherSpouseIds.map((sId, sIdx) => {
                   const sMem = allMembers.find(m => m.id === sId);
                   return (
@@ -464,11 +487,11 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 })}
               </select>
 
-              {motherId ? (
+              {(motherId || fatherSpouseIds[0]) ? (
                 <div className="text-[11px] text-rose-800 font-semibold flex items-center gap-1">
-                  <span>Đã gán Thân mẫu:</span>
+                  <span>Đã chọn Thân mẫu:</span>
                   <strong className="text-rose-950 underline underline-offset-2">
-                    {allMembers.find(m => m.id === motherId)?.fullName || motherName}
+                    {allMembers.find(m => m.id === (motherId || fatherSpouseIds[0]))?.fullName || motherName}
                   </strong>
                 </div>
               ) : (
@@ -477,28 +500,8 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 </div>
               )}
             </div>
-          )}
-
-          {/* If Father has exactly 1 spouse: Auto-assign without asking */}
-          {fatherSpouseIds.length === 1 && (
-            <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-300/80 text-xs flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Heart className="w-4 h-4 text-emerald-600 fill-emerald-500/20 shrink-0" />
-                <div className="text-stone-800">
-                  <span className="text-stone-500 font-medium">Thân mẫu: </span>
-                  <strong className="text-emerald-950 font-bold">
-                    {allMembers.find(m => m.id === fatherSpouseIds[0])?.fullName || motherName}
-                  </strong>
-                </div>
-              </div>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 font-bold border border-emerald-300 shrink-0">
-                Tự động gán (1 vợ)
-              </span>
-            </div>
-          )}
-
-          {/* If Father has 0 linked spouses: Manual text input */}
-          {fatherSpouseIds.length === 0 && (
+          ) : (
+            /* If Father has 0 linked spouses: Manual text input */
             <div>
               <label className="block text-stone-700 font-bold mb-1">
                 Thân mẫu (Mẹ đẻ - nhập chữ nếu chưa tạo hồ sơ trong hệ thống):

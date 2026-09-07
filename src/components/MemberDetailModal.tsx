@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   X, 
   Phone, 
@@ -15,10 +15,16 @@ import {
   ChevronRight,
   Flame,
   ShieldCheck,
-  Trash2
+  Trash2,
+  Search,
+  UserCheck,
+  Sparkles,
+  Check,
+  Loader2
 } from 'lucide-react';
 import { ClanMember, ClanInfo, Role } from '../types';
 import { calculateAgeInfo, getGenderVisuals } from '../utils/genealogyUtils';
+import { generateUUID } from '../services/supabaseService';
 
 interface MemberDetailModalProps {
   member: ClanMember | null;
@@ -30,6 +36,7 @@ interface MemberDetailModalProps {
   onAddChild: (parent: ClanMember) => void;
   onEditMember: (m: ClanMember) => void;
   onDeleteMember?: (memberId: string) => void;
+  onAddSpouseLink?: (targetMember: ClanMember, spouseMember: ClanMember, isNew?: boolean) => Promise<void> | void;
 }
 
 export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
@@ -42,6 +49,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
   onAddChild,
   onEditMember,
   onDeleteMember,
+  onAddSpouseLink,
 }) => {
   if (!member) return null;
 
@@ -50,6 +58,18 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
 
   const canEdit = currentUserRole === 'admin' || currentUserRole === 'support';
   const canDelete = currentUserRole === 'admin';
+
+  // Sub-modal state for "+ Thêm Phối Ngẫu"
+  const [isAddSpouseModalOpen, setIsAddSpouseModalOpen] = useState(false);
+  const [addSpouseTab, setAddSpouseTab] = useState<'existing' | 'new'>('existing');
+  const [spouseSearchTerm, setSpouseSearchTerm] = useState('');
+  const [selectedExistingMemberId, setSelectedExistingMemberId] = useState<string | null>(null);
+
+  const [newSpouseName, setNewSpouseName] = useState('');
+  const [newSpouseGender, setNewSpouseGender] = useState<'male' | 'female'>('female');
+  const [newSpouseBirthYear, setNewSpouseBirthYear] = useState('');
+  const [newSpouseIsAlive, setNewSpouseIsAlive] = useState(true);
+  const [isSubmittingSpouse, setIsSubmittingSpouse] = useState(false);
 
   // Find Parents based on real gender
   const linkedParent = member.parentId ? allMembers.find(m => m.id === member.parentId) : null;
@@ -64,6 +84,91 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
     const combined = Array.from(new Set([...direct, ...reverse]));
     return combined.map(id => allMembers.find(m => m.id === id)).filter((m): m is ClanMember => Boolean(m));
   }, [member, allMembers]);
+
+  // Candidate existing members for Tab 1
+  const candidateExistingMembers = useMemo(() => {
+    if (!member) return [];
+    const linkedIds = new Set(linkedSpouseMembers.map(m => m.id));
+    linkedIds.add(member.id);
+
+    return allMembers
+      .filter(m => !linkedIds.has(m.id))
+      .filter(m => {
+        if (!spouseSearchTerm.trim()) return true;
+        const q = spouseSearchTerm.toLowerCase();
+        return (
+          m.fullName.toLowerCase().includes(q) ||
+          m.branch.toLowerCase().includes(q) ||
+          `đời ${m.generation}`.includes(q) ||
+          (m.birthYear && String(m.birthYear).includes(q))
+        );
+      });
+  }, [allMembers, member, linkedSpouseMembers, spouseSearchTerm]);
+
+  const handleOpenAddSpouseModal = () => {
+    if (currentUserRole === 'member') {
+      alert('Tài khoản Thành viên (Member) chỉ có quyền xem. Vui lòng chuyển sang tài khoản Quản Trị Viên (Admin) hoặc Ban Hỗ Trợ (Support) để thêm phối ngẫu.');
+      return;
+    }
+    setAddSpouseTab('existing');
+    setSpouseSearchTerm('');
+    setSelectedExistingMemberId(null);
+    setNewSpouseName('');
+    setNewSpouseGender(member.gender === 'male' ? 'female' : 'male');
+    setNewSpouseBirthYear('');
+    setNewSpouseIsAlive(member.isAlive);
+    setIsAddSpouseModalOpen(true);
+  };
+
+  const handleConfirmLinkExisting = async () => {
+    if (!selectedExistingMemberId || !onAddSpouseLink) return;
+    const existingSpouse = allMembers.find(m => m.id === selectedExistingMemberId);
+    if (!existingSpouse) return;
+
+    try {
+      setIsSubmittingSpouse(true);
+      await onAddSpouseLink(member, existingSpouse, false);
+      setIsAddSpouseModalOpen(false);
+    } catch (err: any) {
+      alert(err?.message || 'Có lỗi xảy ra khi liên kết phối ngẫu.');
+    } finally {
+      setIsSubmittingSpouse(false);
+    }
+  };
+
+  const handleConfirmCreateNewSpouse = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newSpouseName.trim()) {
+      alert('Vui lòng nhập Họ và tên của phối ngẫu.');
+      return;
+    }
+    if (!onAddSpouseLink) return;
+
+    try {
+      setIsSubmittingSpouse(true);
+      const newMemberObj: ClanMember = {
+        id: generateUUID(),
+        fullName: newSpouseName.trim(),
+        gender: newSpouseGender,
+        generation: member.generation,
+        branch: member.branch || 'Chi Trưởng',
+        birthYear: newSpouseBirthYear.trim() ? Number(newSpouseBirthYear) || newSpouseBirthYear.trim() : undefined,
+        isAlive: newSpouseIsAlive,
+        parentId: null,
+        motherId: null,
+        spouse: member.fullName,
+        spouseIds: [member.id],
+        role: 'member',
+      };
+
+      await onAddSpouseLink(member, newMemberObj, true);
+      setIsAddSpouseModalOpen(false);
+    } catch (err: any) {
+      alert(err?.message || 'Có lỗi xảy ra khi tạo phối ngẫu mới.');
+    } finally {
+      setIsSubmittingSpouse(false);
+    }
+  };
 
   // Find Children
   const children = useMemo(() => {
@@ -224,22 +329,39 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
             </div>
 
             {/* Spouse info */}
-            <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200">
-              <span className="text-stone-400 font-medium block mb-1">Phối ngẫu (Vợ / Chồng):</span>
+            <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 sm:col-span-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-stone-500 font-medium text-xs">Phối ngẫu (Vợ / Chồng):</span>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddSpouseModal}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 border border-rose-200 text-xs font-bold transition-all shadow-2xs cursor-pointer hover:scale-105"
+                  >
+                    <Heart className="w-3.5 h-3.5 text-rose-600 fill-rose-500/20" />
+                    <span>+ Thêm Phối Ngẫu</span>
+                  </button>
+                )}
+              </div>
               {linkedSpouseMembers.length > 0 ? (
                 <div className="space-y-2">
-                  {linkedSpouseMembers.map((spMem, sIdx) => (
+                  {linkedSpouseMembers.map((spMem) => (
                     <button
                       key={spMem.id}
                       onClick={() => onSelectMember(spMem)}
-                      className="w-full text-left font-bold text-stone-900 hover:text-amber-800 flex items-center justify-between gap-1 text-sm group p-1.5 rounded-xl bg-white border border-stone-200/80 hover:border-amber-400 shadow-2xs transition-all cursor-pointer"
+                      className="w-full text-left font-bold text-stone-900 hover:text-amber-800 flex items-center justify-between gap-1 text-sm group p-2 rounded-xl bg-white border border-stone-200/80 hover:border-rose-400 shadow-2xs transition-all cursor-pointer"
                     >
-                      <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
                         <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20 shrink-0" />
                         <span className="truncate">{spMem.fullName}</span>
                         <span className="text-xs text-stone-500 font-normal shrink-0">
                           (Đời {spMem.generation} • {spMem.branch})
                         </span>
+                        {spMem.birthYear && (
+                          <span className="text-[11px] text-stone-400 font-normal hidden sm:inline">
+                            • Sinh {spMem.birthYear}
+                          </span>
+                        )}
                       </div>
                       <ChevronRight className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
                     </button>
@@ -260,9 +382,18 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                   ))}
                 </div>
               ) : (
-                <span className="font-bold text-stone-900 text-sm">
-                  {member.spouse || 'Chưa có thông tin'}
-                </span>
+                <div className="flex items-center justify-between text-sm text-stone-500 italic py-1">
+                  <span>{member.spouse || 'Chưa liên kết phối ngẫu trong gia phả'}</span>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={handleOpenAddSpouseModal}
+                      className="text-xs font-semibold text-rose-700 hover:text-rose-800 hover:underline not-italic cursor-pointer"
+                    >
+                      Bấm để thêm ngay
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -390,8 +521,19 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
           <div className="flex items-center gap-2">
             {canEdit && (
               <button
+                type="button"
+                onClick={handleOpenAddSpouseModal}
+                className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Thêm hoặc liên kết phối ngẫu (vợ / chồng)"
+              >
+                <Heart className="w-3.5 h-3.5 text-rose-600 fill-rose-500/20" />
+                <span>+ Thêm Phối Ngẫu</span>
+              </button>
+            )}
+            {canEdit && (
+              <button
                 onClick={() => onAddChild(member)}
-                className="px-4 py-2 rounded-xl bg-amber-800 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors"
+                className="px-4 py-2 rounded-xl bg-amber-800 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 <span>Thêm Con Cháu</span>
@@ -399,7 +541,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
             )}
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold"
+              className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold cursor-pointer"
             >
               Đóng
             </button>
@@ -407,6 +549,311 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
         </div>
 
       </div>
+
+      {/* Sub-modal: Thêm Phối Ngẫu */}
+      {isAddSpouseModalOpen && (
+        <div className="fixed inset-0 z-60 overflow-y-auto bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div 
+            className="bg-white rounded-3xl border border-rose-200 shadow-2xl max-w-lg w-full overflow-hidden text-stone-900 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-rose-900 via-[#381119] to-stone-900 text-white p-5 relative">
+              <button
+                type="button"
+                onClick={() => setIsAddSpouseModalOpen(false)}
+                className="absolute top-4 right-4 p-1.5 rounded-full bg-stone-900/60 hover:bg-stone-900 text-stone-300 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center gap-2 mb-1">
+                <Heart className="w-4 h-4 text-rose-400 fill-rose-400/30" />
+                <h3 className="text-lg font-bold font-serif-clan tracking-wide">
+                  Thêm Phối Ngẫu (Vợ / Chồng)
+                </h3>
+              </div>
+              <p className="text-xs text-rose-200">
+                Liên kết phối ngẫu hai chiều cho: <strong className="text-white">{member.fullName}</strong> ({member.gender === 'male' ? 'Nam Đinh' : 'Nữ Giới'}, Đời {member.generation} - {member.branch})
+              </p>
+            </div>
+
+            {/* Tab switchers */}
+            <div className="p-3 bg-stone-100/80 border-b border-stone-200 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAddSpouseTab('existing')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  addSpouseTab === 'existing'
+                    ? 'bg-rose-700 text-white shadow-xs'
+                    : 'bg-white text-stone-700 hover:bg-stone-50 border border-stone-200'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Chọn người có sẵn</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAddSpouseTab('new')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  addSpouseTab === 'new'
+                    ? 'bg-rose-700 text-white shadow-xs'
+                    : 'bg-white text-stone-700 hover:bg-stone-50 border border-stone-200'
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Tạo người mới</span>
+              </button>
+            </div>
+
+            {/* Tab 1: Chọn người có sẵn */}
+            {addSpouseTab === 'existing' && (
+              <div className="p-5 space-y-4">
+                <p className="text-xs text-stone-600 leading-relaxed">
+                  Tìm kiếm và chọn một thành viên đã có trong danh sách dòng họ để liên kết làm vợ/chồng. Hệ thống sẽ tự động cập nhật vào danh sách phối ngẫu của cả 2 người.
+                </p>
+
+                <div className="relative">
+                  <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={spouseSearchTerm}
+                    onChange={(e) => setSpouseSearchTerm(e.target.value)}
+                    placeholder="Tìm theo họ tên, chi phái, đời..."
+                    className="w-full pl-9 pr-14 py-2 text-xs rounded-xl bg-stone-50 border border-stone-300 focus:border-rose-500 focus:outline-none"
+                    autoFocus
+                  />
+                  {spouseSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSpouseSearchTerm('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 text-xs font-semibold cursor-pointer"
+                    >
+                      Xóa
+                    </button>
+                  )}
+                </div>
+
+                {/* Candidate list */}
+                <div className="max-h-56 overflow-y-auto space-y-1.5 border border-stone-200 rounded-2xl p-2 bg-stone-50/50">
+                  {candidateExistingMembers.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-stone-400 italic">
+                      Không tìm thấy thành viên nào phù hợp. Bạn có thể chuyển sang tab &quot;Tạo người mới&quot; để tạo nhanh hồ sơ.
+                    </div>
+                  ) : (
+                    candidateExistingMembers.map((cand) => {
+                      const isSelected = selectedExistingMemberId === cand.id;
+                      return (
+                        <div
+                          key={cand.id}
+                          onClick={() => setSelectedExistingMemberId(cand.id)}
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-rose-50 border-rose-400 shadow-xs'
+                              : 'bg-white border-stone-200 hover:border-stone-300 hover:bg-stone-50'
+                          }`}
+                        >
+                          <div className="min-w-0 flex items-center gap-2">
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                              cand.gender === 'male' ? 'bg-blue-100 text-blue-900' : 'bg-rose-100 text-rose-900'
+                            }`}>
+                              {cand.gender === 'male' ? 'Nam' : 'Nữ'}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-bold text-xs text-stone-900 truncate flex items-center gap-1.5">
+                                <span>{cand.fullName}</span>
+                                <span className="text-[11px] font-normal text-stone-500">
+                                  (Đời {cand.generation} • {cand.branch})
+                                </span>
+                              </div>
+                              <div className="text-[10.5px] text-stone-500">
+                                {cand.birthYear ? `Sinh ${cand.birthYear}` : 'Chưa rõ năm sinh'} {cand.isAlive ? '• Còn sống' : '• Tiền nhân'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                            isSelected
+                              ? 'bg-rose-600 border-rose-600 text-white'
+                              : 'border-stone-300 bg-white'
+                          }`}>
+                            {isSelected && <Check className="w-3 h-3" />}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {selectedExistingMemberId && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-950 flex items-center gap-2">
+                    <Heart className="w-4 h-4 text-rose-600 shrink-0 fill-rose-500/20" />
+                    <div>
+                      Đã chọn: <strong>{allMembers.find(m => m.id === selectedExistingMemberId)?.fullName}</strong> — sẽ liên kết phối ngẫu hai chiều với <strong>{member.fullName}</strong>.
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-200">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddSpouseModalOpen(false)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-stone-200 hover:bg-stone-300 text-stone-700 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmLinkExisting}
+                    disabled={!selectedExistingMemberId || isSubmittingSpouse}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-700 hover:bg-rose-800 disabled:opacity-50 disabled:cursor-not-allowed text-white flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    {isSubmittingSpouse ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Đang liên kết...</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>Xác Nhận Liên Kết</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Tạo người mới */}
+            {addSpouseTab === 'new' && (
+              <form onSubmit={handleConfirmCreateNewSpouse} className="p-5 space-y-4">
+                <p className="text-xs text-stone-600 leading-relaxed">
+                  Nhập thông tin cơ bản để tạo nhanh hồ sơ thành viên mới và tự động liên kết làm phối ngẫu của <strong>{member.fullName}</strong> trong 1 thao tác duy nhất.
+                </p>
+
+                {/* Full name */}
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Họ và tên phối ngẫu: <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newSpouseName}
+                    onChange={(e) => setNewSpouseName(e.target.value)}
+                    placeholder={member.gender === 'male' ? "Ví dụ: Bà Hoàng Thị Minh Châu" : "Ví dụ: Ông Nguyễn Văn Hải"}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-stone-50 border border-stone-300 focus:border-rose-500 focus:outline-none font-medium"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Gender */}
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Giới tính: <span className="text-rose-600">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewSpouseGender('female')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        newSpouseGender === 'female'
+                          ? 'bg-rose-100 border-rose-500 text-rose-950 shadow-2xs'
+                          : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-rose-500" />
+                      <span>Nữ Giới (Bà)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewSpouseGender('male')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        newSpouseGender === 'male'
+                          ? 'bg-blue-100 border-blue-500 text-blue-950 shadow-2xs'
+                          : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                      <span>Nam Đinh (Ông)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Birth year and IsAlive */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      Năm sinh (Tùy chọn):
+                    </label>
+                    <input
+                      type="text"
+                      value={newSpouseBirthYear}
+                      onChange={(e) => setNewSpouseBirthYear(e.target.value)}
+                      placeholder={member.birthYear ? `Khoảng ${member.birthYear}` : "Ví dụ: 1972"}
+                      className="w-full px-3 py-2 text-xs rounded-xl bg-stone-50 border border-stone-300 focus:border-rose-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      Tình trạng:
+                    </label>
+                    <div className="flex items-center gap-2 h-9">
+                      <label className="flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newSpouseIsAlive}
+                          onChange={(e) => setNewSpouseIsAlive(e.target.checked)}
+                          className="rounded text-rose-600 focus:ring-rose-500"
+                        />
+                        <span className={newSpouseIsAlive ? "font-bold text-emerald-700" : "text-stone-500"}>
+                          {newSpouseIsAlive ? 'Còn sống' : 'Đã tạ thế'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+                  * Hồ sơ sẽ được tự động gán cùng Đời thứ {member.generation}, cùng {member.branch}, và tự động liên kết 2 chiều với <strong>{member.fullName}</strong>.
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-200">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddSpouseModalOpen(false)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-stone-200 hover:bg-stone-300 text-stone-700 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingSpouse || !newSpouseName.trim()}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-700 hover:bg-rose-800 disabled:opacity-50 disabled:cursor-not-allowed text-white flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    {isSubmittingSpouse ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Đang tạo & liên kết...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Tạo & Liên Kết Ngay</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+          </div>
+        </div>
+      )}
     </div>
   );
 };

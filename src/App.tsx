@@ -189,6 +189,77 @@ export default function App() {
     setIsAddEditOpen(false);
   };
 
+  // Handler to link spouse symmetrically (existing or newly created member)
+  const handleAddSpouseLink = async (targetMember: ClanMember, spouseMember: ClanMember, isNew: boolean = false) => {
+    if (currentUserRole === 'member') {
+      alert('Tài khoản Thành viên (Member) chỉ có quyền xem. Vui lòng đăng nhập với tài khoản Quản Trị Viên (Admin) hoặc Ban Hỗ Trợ (Support) để thực hiện.');
+      return;
+    }
+
+    const targetSpouseIds = Array.from(new Set([...(targetMember.spouseIds || []), spouseMember.id]));
+    const updatedTarget: ClanMember = {
+      ...targetMember,
+      spouseIds: targetSpouseIds,
+      spouse: targetMember.spouse ? `${targetMember.spouse}, ${spouseMember.fullName}` : spouseMember.fullName,
+    };
+
+    const spouseSpouseIds = Array.from(new Set([...(spouseMember.spouseIds || []), targetMember.id]));
+    const updatedSpouse: ClanMember = {
+      ...spouseMember,
+      spouseIds: spouseSpouseIds,
+      spouse: spouseMember.spouse || targetMember.fullName,
+    };
+
+    let savedNewSpouse: ClanMember | null = null;
+    if (isNew) {
+      const resNew = await saveMemberService(updatedSpouse, currentUserRole, members);
+      if (!resNew.success) {
+        alert(resNew.error || 'Lỗi khi tạo hồ sơ phối ngẫu mới.');
+        return;
+      }
+      savedNewSpouse = resNew.member;
+    }
+
+    const memberPoolForTarget = isNew && savedNewSpouse ? [...members, savedNewSpouse] : members;
+    const resTarget = await saveMemberService(updatedTarget, currentUserRole, memberPoolForTarget);
+    if (!resTarget.success) {
+      alert(resTarget.error || 'Lỗi khi liên kết phối ngẫu.');
+      return;
+    }
+
+    const savedTarget = resTarget.member;
+    const additionalSpouses = resTarget.updatedSpouses || [];
+
+    setMembers(prev => {
+      let list = [...prev];
+      if (isNew && savedNewSpouse) {
+        const idx = list.findIndex(m => m.id === savedNewSpouse!.id);
+        if (idx >= 0) list[idx] = savedNewSpouse;
+        else list.push(savedNewSpouse);
+      } else {
+        const sIdx = list.findIndex(m => m.id === updatedSpouse.id);
+        if (sIdx >= 0) list[sIdx] = updatedSpouse;
+      }
+
+      const tIdx = list.findIndex(m => m.id === savedTarget.id);
+      if (tIdx >= 0) {
+        list[tIdx] = savedTarget;
+      } else {
+        list.push(savedTarget);
+      }
+
+      additionalSpouses.forEach(sp => {
+        const idx = list.findIndex(m => m.id === sp.id);
+        if (idx >= 0) list[idx] = sp;
+      });
+
+      return list;
+    });
+
+    setSelectedMember(savedTarget);
+    showToast(`Đã liên kết phối ngẫu "${spouseMember.fullName}" cho "${targetMember.fullName}" thành công!`);
+  };
+
   // Handler to delete member
   const handleDeleteMember = async (memberId: string) => {
     const memberObj = members.find(m => m.id === memberId);
@@ -422,6 +493,7 @@ export default function App() {
             handleOpenEditMember(m);
           }}
           onDeleteMember={handleDeleteMember}
+          onAddSpouseLink={handleAddSpouseLink}
         />
       )}
 
