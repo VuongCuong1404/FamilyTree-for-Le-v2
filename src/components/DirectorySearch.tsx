@@ -562,3 +562,5 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
     </div>
   );
 };
+
+export default DirectorySearch;

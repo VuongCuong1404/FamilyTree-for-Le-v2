@@ -754,3 +754,5 @@ export const AdminRoleManager: React.FC<AdminRoleManagerProps> = ({
     </div>
   );
 };
+
+export default AdminRoleManager;

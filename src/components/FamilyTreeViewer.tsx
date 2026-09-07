@@ -483,6 +483,17 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     `;
   };
 
+  // Lọc danh sách thành viên hiển thị trên sơ đồ cây
+  const treeMembers = useMemo(() => {
+    return filterMembersForTree(members, selectedBranch, selectedGenFilter, showSpouses);
+  }, [members, selectedBranch, selectedGenFilter, showSpouses]);
+
+  // Bọc trong useMemo phụ thuộc vào [treeMembers, showSpouses] để tránh tính toán lại khi gõ tìm kiếm hoặc đổi filter không liên quan
+  const chartData = useMemo(() => {
+    if (treeMembers.length === 0) return [];
+    return convertClanMembersToChartData(treeMembers, showSpouses);
+  }, [treeMembers, showSpouses]);
+
   // Initialize and update family-chart library
   useEffect(() => {
     if (!chartContainerRef.current || viewMode !== 'tree') return;
@@ -490,10 +501,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     const container = chartContainerRef.current;
     container.innerHTML = ''; // Clean previous tree instances
 
-    const treeMembers = filterMembersForTree(members, selectedBranch, selectedGenFilter, showSpouses);
-    if (treeMembers.length === 0) return;
-
-    const chartData = convertClanMembersToChartData(treeMembers, showSpouses);
+    if (chartData.length === 0) return;
 
     try {
       const chart = f3.createChart(container, chartData);
@@ -527,7 +535,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         container.innerHTML = '';
       }
     };
-  }, [members, selectedBranch, selectedGenFilter, showSpouses, searchQuery, genderFilter, viewMode]);
+  }, [chartData, searchQuery, genderFilter, viewMode, maxGeneration]);
 
   // Zoom and tree position handlers powered by family-chart and D3 Zoom
   const handleZoomIn = () => {
@@ -1578,4 +1586,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     </div>
   );
 };
+
+export default FamilyTreeViewer;
 

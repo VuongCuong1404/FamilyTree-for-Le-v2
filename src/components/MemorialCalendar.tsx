@@ -856,3 +856,5 @@ Nam mô A Di Đà Phật! (3 lần, 3 lạy)`
     </div>
   );
 };
+
+export default MemorialCalendar;

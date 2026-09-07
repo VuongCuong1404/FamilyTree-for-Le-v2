@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { 
   ClanInfo, 
   ClanMember, 
@@ -13,16 +13,18 @@ import {
 } from './data/initialData';
 import { Navbar } from './components/Navbar';
 import { HomeOverview } from './components/HomeOverview';
-import { FamilyTreeViewer } from './components/FamilyTreeViewer';
-import { DirectorySearch } from './components/DirectorySearch';
-import { MemorialCalendar } from './components/MemorialCalendar';
 import { MemberDetailModal } from './components/MemberDetailModal';
 import { ZaloConnectModal } from './components/ZaloConnectModal';
 import { AddEditMemberModal } from './components/AddEditMemberModal';
 import { ClanSettingsModal } from './components/ClanSettingsModal';
 import { AuthModal } from './components/AuthModal';
 import { UserProfileModal } from './components/UserProfileModal';
-import { AdminRoleManager } from './components/AdminRoleManager';
+
+// Tải theo kiểu lazy loading để tối ưu bundle và tăng tốc độ tải trang ban đầu
+const FamilyTreeViewer = React.lazy(() => import('./components/FamilyTreeViewer'));
+const DirectorySearch = React.lazy(() => import('./components/DirectorySearch'));
+const MemorialCalendar = React.lazy(() => import('./components/MemorialCalendar'));
+const AdminRoleManager = React.lazy(() => import('./components/AdminRoleManager'));
 import { 
   fetchMembersService, 
   saveMemberService, 
@@ -443,51 +445,59 @@ export default function App() {
         )}
 
         {activeTab === 'tree' && (
-          <FamilyTreeViewer
-            members={members}
-            clanInfo={clanInfo}
-            onSelectMember={(m) => setSelectedMember(m)}
-            onAddChild={(parent) => handleOpenAddChild(parent)}
-            currentUserProfile={currentUserProfile}
-            currentUserRole={currentUserRole}
-            onOpenAuth={() => setIsAuthOpen(true)}
-          />
+          <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-stone-500 font-medium text-sm">Đang tải...</div>}>
+            <FamilyTreeViewer
+              members={members}
+              clanInfo={clanInfo}
+              onSelectMember={(m) => setSelectedMember(m)}
+              onAddChild={(parent) => handleOpenAddChild(parent)}
+              currentUserProfile={currentUserProfile}
+              currentUserRole={currentUserRole}
+              onOpenAuth={() => setIsAuthOpen(true)}
+            />
+          </Suspense>
         )}
 
         {activeTab === 'directory' && (
-          <DirectorySearch
-            members={members}
-            clanInfo={clanInfo}
-            onSelectMember={(m) => setSelectedMember(m)}
-            onOpenZalo={() => setIsZaloOpen(true)}
-            currentUserProfile={currentUserProfile}
-            currentUserRole={currentUserRole}
-            onOpenAuth={() => setIsAuthOpen(true)}
-          />
+          <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-stone-500 font-medium text-sm">Đang tải...</div>}>
+            <DirectorySearch
+              members={members}
+              clanInfo={clanInfo}
+              onSelectMember={(m) => setSelectedMember(m)}
+              onOpenZalo={() => setIsZaloOpen(true)}
+              currentUserProfile={currentUserProfile}
+              currentUserRole={currentUserRole}
+              onOpenAuth={() => setIsAuthOpen(true)}
+            />
+          </Suspense>
         )}
 
         {activeTab === 'memorial' && (
-          <MemorialCalendar
-            memorialEvents={memorialEvents}
-            clanInfo={clanInfo}
-            members={members}
-            currentUserRole={currentUserRole}
-            onSelectMember={(m) => setSelectedMember(m)}
-            onSaveEvent={handleSaveMemorialEvent}
-            onDeleteEvent={handleDeleteMemorialEvent}
-          />
+          <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-stone-500 font-medium text-sm">Đang tải...</div>}>
+            <MemorialCalendar
+              memorialEvents={memorialEvents}
+              clanInfo={clanInfo}
+              members={members}
+              currentUserRole={currentUserRole}
+              onSelectMember={(m) => setSelectedMember(m)}
+              onSaveEvent={handleSaveMemorialEvent}
+              onDeleteEvent={handleDeleteMemorialEvent}
+            />
+          </Suspense>
         )}
 
         {activeTab === 'admin' && currentUserRole === 'admin' && (
-          <AdminRoleManager
-            currentUserRole={currentUserRole}
-            clanInfo={clanInfo}
-            currentUserProfile={currentUserProfile}
-            members={members}
-            onOpenAuth={() => setIsAuthOpen(true)}
-            onRoleUpdated={loadData}
-            onMemberLinked={loadData}
-          />
+          <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-stone-500 font-medium text-sm">Đang tải...</div>}>
+            <AdminRoleManager
+              currentUserRole={currentUserRole}
+              clanInfo={clanInfo}
+              currentUserProfile={currentUserProfile}
+              members={members}
+              onOpenAuth={() => setIsAuthOpen(true)}
+              onRoleUpdated={loadData}
+              onMemberLinked={loadData}
+            />
+          </Suspense>
         )}
       </main>
 
