@@ -359,13 +359,15 @@ export async function saveMemberService(
 }
 
 /**
- * Delete a member
+ * Xóa thành viên khỏi phả hệ (Chỉ Quản Trị Viên - Admin)
+ * Tự động gỡ memberId khỏi spouse_ids của các phối ngẫu và father_id/mother_id của con cái trước khi delete
  */
 export async function deleteMemberService(
   memberId: string, 
-  currentRole: Role
+  currentRole: Role,
+  allMembers?: ClanMember[]
 ): Promise<{ success: boolean; error?: string }> {
-  // Permission verification: Only 'admin' can delete members
+  // 1. Kiểm tra phân quyền: Chỉ Quản Trị Viên (Admin) mới có quyền xóa
   if (currentRole !== 'admin') {
     return {
       success: false,
@@ -375,13 +377,117 @@ export async function deleteMemberService(
 
   const client = getSupabaseClient();
   if (!client) {
-    return {
-      success: false,
-      error: 'Chưa kết nối được Supabase. Vui lòng kiểm tra cấu hình kết nối database.',
-    };
+    // Chế độ Offline / Không có kết nối Supabase: dọn dẹp liên kết và đồng bộ localStorage
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_MEMBERS);
+      let list: ClanMember[] = saved ? JSON.parse(saved) : (allMembers || INITIAL_MEMBERS);
+      list = list
+        .filter(m => m.id !== memberId)
+        .map(m => {
+          let updated = { ...m };
+          if (updated.spouseIds && updated.spouseIds.includes(memberId)) {
+            updated.spouseIds = updated.spouseIds.filter(id => id !== memberId);
+          }
+          if (updated.parentId === memberId) {
+            updated.parentId = null;
+          }
+          if (updated.motherId === memberId) {
+            updated.motherId = undefined;
+          }
+          return updated;
+        });
+      localStorage.setItem(LOCAL_STORAGE_MEMBERS, JSON.stringify(list));
+      return { success: true };
+    } catch (e: any) {
+      return {
+        success: false,
+        error: e.message || 'Lỗi khi xóa thành viên trong bộ nhớ cục bộ.',
+      };
+    }
   }
 
   try {
+    // 2. Tìm danh sách phối ngẫu có memberId trong spouse_ids
+    const spousePartners: { id: string; spouseIds: string[] }[] = [];
+
+    // Lấy trước từ danh sách thành viên hiện có
+    const localList: ClanMember[] = (allMembers && allMembers.length > 0)
+      ? allMembers
+      : (() => {
+          try {
+            const s = localStorage.getItem(LOCAL_STORAGE_MEMBERS);
+            return s ? JSON.parse(s) : [];
+          } catch {
+            return [];
+          }
+        })();
+
+    localList.forEach(m => {
+      if (m.id !== memberId && m.spouseIds && m.spouseIds.includes(memberId)) {
+        spousePartners.push({ id: m.id, spouseIds: m.spouseIds });
+      }
+    });
+
+    // Truy vấn thêm từ Supabase để đảm bảo đầy đủ
+    try {
+      const { data: dbMembers } = await client
+        .from('members')
+        .select('id, spouse_ids');
+
+      if (dbMembers && Array.isArray(dbMembers)) {
+        dbMembers.forEach((row: any) => {
+          if (row.id === memberId) return;
+          let spIds: string[] = [];
+          if (Array.isArray(row.spouse_ids)) {
+            spIds = row.spouse_ids.map(String);
+          } else if (typeof row.spouse_ids === 'string') {
+            try {
+              const p = JSON.parse(row.spouse_ids);
+              if (Array.isArray(p)) spIds = p.map(String);
+            } catch {
+              spIds = row.spouse_ids.replace(/[{}]/g, '').split(',').map((s: string) => s.trim());
+            }
+          }
+          if (spIds.includes(memberId)) {
+            if (!spousePartners.some(sp => sp.id === row.id)) {
+              spousePartners.push({ id: row.id, spouseIds: spIds });
+            }
+          }
+        });
+      }
+    } catch (fetchErr) {
+      console.warn('Không thể truy vấn danh sách spouse_ids từ Supabase:', fetchErr);
+    }
+
+    // 3. Cập nhật gỡ memberId khỏi spouse_ids của từng phối ngẫu trên Supabase
+    for (const partner of spousePartners) {
+      const newSpouseIds = partner.spouseIds.filter(id => id !== memberId && isUUID(id));
+      try {
+        await client
+          .from('members')
+          .update({ spouse_ids: newSpouseIds })
+          .eq('id', partner.id);
+      } catch (partnerErr) {
+        console.warn(`Lỗi gỡ phối ngẫu cho thành viên ${partner.id}:`, partnerErr);
+      }
+    }
+
+    // 4. Gỡ memberId khỏi father_id và mother_id của các con trên Supabase
+    try {
+      await client
+        .from('members')
+        .update({ father_id: null })
+        .eq('father_id', memberId);
+
+      await client
+        .from('members')
+        .update({ mother_id: null })
+        .eq('mother_id', memberId);
+    } catch (parentCleanErr) {
+      console.warn('Lỗi dọn dẹp liên kết cha/mẹ của con cái:', parentCleanErr);
+    }
+
+    // 5. Tiến hành DELETE thành viên sau khi các liên kết đã được gỡ an toàn
     const { error } = await client
       .from('members')
       .delete()
@@ -395,14 +501,28 @@ export async function deleteMemberService(
       };
     }
 
-    // Update local storage
+    // 6. Cập nhật và đồng bộ sạch sẽ vào localStorage
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_MEMBERS);
-      let list: ClanMember[] = saved ? JSON.parse(saved) : INITIAL_MEMBERS;
-      list = list.filter(m => m.id !== memberId);
+      let list: ClanMember[] = saved ? JSON.parse(saved) : (allMembers || INITIAL_MEMBERS);
+      list = list
+        .filter(m => m.id !== memberId)
+        .map(m => {
+          let updated = { ...m };
+          if (updated.spouseIds && updated.spouseIds.includes(memberId)) {
+            updated.spouseIds = updated.spouseIds.filter(id => id !== memberId);
+          }
+          if (updated.parentId === memberId) {
+            updated.parentId = null;
+          }
+          if (updated.motherId === memberId) {
+            updated.motherId = undefined;
+          }
+          return updated;
+        });
       localStorage.setItem(LOCAL_STORAGE_MEMBERS, JSON.stringify(list));
     } catch (e) {
-      console.error(e);
+      console.error('Lỗi đồng bộ localStorage sau khi xóa:', e);
     }
 
     return { success: true };

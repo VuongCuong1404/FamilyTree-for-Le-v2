@@ -1537,16 +1537,25 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                                 {ageInfo.formattedText}
                               </div>
 
-                              {((member.spouseList && member.spouseList.length > 0) || member.spouse) && (
-                                <div className="text-xs text-stone-500 mt-1 truncate flex items-center gap-1">
-                                  <Heart className="w-3 h-3 text-rose-500 shrink-0" />
-                                  <span title={member.spouseList && member.spouseList.length > 0 ? member.spouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ') : member.spouse}>
-                                    Phối ngẫu: {member.spouseList && member.spouseList.length > 0
+                              {(() => {
+                                const spNamesFromIds = (member.spouseIds && member.spouseIds.length > 0)
+                                  ? member.spouseIds.map(sid => members.find(x => x.id === sid)?.fullName).filter(Boolean)
+                                  : [];
+                                const spText = spNamesFromIds.length > 0
+                                  ? spNamesFromIds.join(', ')
+                                  : (member.spouseList && member.spouseList.length > 0
                                       ? member.spouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ')
-                                      : member.spouse}
-                                  </span>
-                                </div>
-                              )}
+                                      : (member.spouse && !/^[0-9a-f-]{36}$/i.test(member.spouse.trim()) ? member.spouse : ''));
+                                if (!spText) return null;
+                                return (
+                                  <div className="text-xs text-stone-500 mt-1 truncate flex items-center gap-1">
+                                    <Heart className="w-3 h-3 text-rose-500 shrink-0" />
+                                    <span title={spText}>
+                                      Phối ngẫu: {spText}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
 
                               {member.address && (
                                 <div className="text-xs text-stone-500 mt-0.5 truncate">

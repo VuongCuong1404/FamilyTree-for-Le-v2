@@ -308,6 +308,8 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                   <span className="text-xs text-stone-500 font-normal">({father.title || `Đời ${father.generation}`})</span>
                   <ChevronRight className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
                 </button>
+              ) : member.parentId ? (
+                <span className="text-stone-500 italic text-sm">(Đã xóa)</span>
               ) : (
                 <span className="text-stone-600 italic">Thủy Tổ khởi phái (Đời I)</span>
               )}
@@ -326,7 +328,13 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                   <ChevronRight className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
                 </button>
               ) : member.motherName ? (
-                <span className="font-bold text-stone-900 text-sm">{member.motherName}</span>
+                <span className="font-bold text-stone-900 text-sm">
+                  {/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(member.motherName.trim())
+                    ? (allMembers.find(m => m.id === member.motherName.trim())?.fullName || '(Đã xóa)')
+                    : member.motherName}
+                </span>
+              ) : member.motherId ? (
+                <span className="text-stone-500 italic text-sm">(Đã xóa)</span>
               ) : (
                 <span className="text-stone-500 italic text-sm">Chưa có thông tin</span>
               )}
@@ -387,7 +395,11 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                 </div>
               ) : (
                 <div className="flex items-center justify-between text-sm text-stone-500 italic py-1">
-                  <span>{member.spouse || 'Chưa liên kết phối ngẫu trong gia phả'}</span>
+                  <span>
+                    {member.spouse && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(member.spouse.trim())
+                      ? (allMembers.find(m => m.id === member.spouse.trim())?.fullName || 'Chưa liên kết phối ngẫu trong gia phả')
+                      : (member.spouse || 'Chưa liên kết phối ngẫu trong gia phả')}
+                  </span>
                   {canEdit && (
                     <button
                       type="button"

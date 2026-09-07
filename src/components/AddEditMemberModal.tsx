@@ -74,17 +74,18 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
   }, [currentFatherId, allMembers]);
 
   const fatherSpouseIds = useMemo(() => {
+    let ids: string[] = [];
     if (currentFather) {
       const direct = currentFather.spouseIds || [];
       const reverse = allMembers.filter(m => m.id !== currentFather.id && m.spouseIds?.includes(currentFather.id)).map(m => m.id);
-      return Array.from(new Set([...direct, ...reverse]));
-    }
-    if (parentToAssign?.gender === 'female') {
+      ids = Array.from(new Set([...direct, ...reverse]));
+    } else if (parentToAssign?.gender === 'female') {
       const direct = parentToAssign.spouseIds || [];
       const reverse = allMembers.filter(m => m.id !== parentToAssign.id && m.spouseIds?.includes(parentToAssign.id)).map(m => m.id);
-      return Array.from(new Set([...direct, ...reverse]));
+      ids = Array.from(new Set([...direct, ...reverse]));
     }
-    return [];
+    // Chỉ giữ ID tồn tại trong allMembers, loại bỏ hoàn toàn các ID mồ côi đã bị xóa
+    return ids.filter(id => allMembers.some(m => m.id === id));
   }, [currentFather, allMembers, parentToAssign]);
 
   // If father has spouses, automatically ensure motherId is set to valid spouse
@@ -140,10 +141,10 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setMotherId(memberToEdit.motherId || null);
       setMotherName(memberToEdit.motherName || '');
       
-      // Load linked spouseIds
+      // Load linked spouseIds (chỉ giữ thành viên còn tồn tại)
       const direct = memberToEdit.spouseIds || [];
       const reverse = allMembers.filter(m => m.id !== memberToEdit.id && m.spouseIds?.includes(memberToEdit.id)).map(m => m.id);
-      setSelectedSpouseIds(Array.from(new Set([...direct, ...reverse])));
+      setSelectedSpouseIds(Array.from(new Set([...direct, ...reverse])).filter(id => allMembers.some(m => m.id === id)));
 
       setPhone(memberToEdit.phone || '');
       setAddress(memberToEdit.address || '');
@@ -166,8 +167,8 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setLunarDeathDate('');
       setParentId(parentToAssign.id);
 
-      // Auto assign mother if parent has spouses
-      const pSpouseIds = parentToAssign.spouseIds || [];
+      // Tự động gán mẹ nếu cha đã có phối ngẫu hợp lệ trong hệ thống
+      const pSpouseIds = (parentToAssign.spouseIds || []).filter(id => allMembers.some(m => m.id === id));
       if (pSpouseIds.length > 0) {
         const firstMId = pSpouseIds[0];
         setMotherId(firstMId);
@@ -275,7 +276,12 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       note: idx === 0 ? 'Chính thất' : `Phối ngẫu ${idx + 1}`,
     }));
 
-    const finalMotherName = motherName.trim() || (motherId ? (allMembers.find(m => m.id === motherId)?.fullName || '') : '');
+    // Đảm bảo không lưu raw UUID làm motherName text
+    let resolvedMotherName = motherName.trim();
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedMotherName)) {
+      resolvedMotherName = allMembers.find(m => m.id === resolvedMotherName)?.fullName || '';
+    }
+    const finalMotherName = resolvedMotherName || (motherId ? (allMembers.find(m => m.id === motherId)?.fullName || '') : '');
     const finalAvatar = avatarUrl.trim() ? avatarUrl.trim() : null;
 
     const newMember: ClanMember = {
@@ -295,7 +301,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       motherName: finalMotherName || undefined,
       spouse: primarySpouseString,
       spouseList: generatedSpouseList.length > 0 ? generatedSpouseList : undefined,
-      spouseIds: selectedSpouseIds,
+      spouseIds: selectedSpouseIds.filter(id => allMembers.some(m => m.id === id)),
       phone: phone.trim() || undefined,
       email: memberToEdit?.email,
       address: address.trim() || undefined,
@@ -561,7 +567,8 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 if (!fatherMem) return;
                 const direct = fatherMem.spouseIds || [];
                 const reverse = allMembers.filter(m => m.id !== fatherMem.id && m.spouseIds?.includes(fatherMem.id)).map(m => m.id);
-                const fSpouseList = Array.from(new Set([...direct, ...reverse]));
+                // Lọc bỏ các ID mồ côi không còn trong allMembers
+                const fSpouseList = Array.from(new Set([...direct, ...reverse])).filter(id => allMembers.some(m => m.id === id));
 
                 if (fSpouseList.length === 1) {
                   setMotherId(fSpouseList[0]);
@@ -624,11 +631,11 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 )}
                 {fatherSpouseIds.map((sId, sIdx) => {
                   const sMem = allMembers.find(m => m.id === sId);
+                  // Không bao giờ hiện raw UUID làm nhãn; nếu thiếu hồ sơ thì bỏ qua
+                  if (!sMem) return null;
                   return (
                     <option key={sId} value={sId}>
-                      {sMem 
-                        ? `${sMem.fullName} (${sIdx === 0 ? 'Chính thất' : `Phối ngẫu ${sIdx + 1}`}, Đời ${sMem.generation} - ${sMem.branch}${sMem.birthYear ? `, Sinh ${sMem.birthYear}` : ''})`
-                        : sId}
+                      {`${sMem.fullName} (${sIdx === 0 ? 'Chính thất' : `Phối ngẫu ${sIdx + 1}`}, Đời ${sMem.generation} - ${sMem.branch}${sMem.birthYear ? `, Sinh ${sMem.birthYear}` : ''})`}
                     </option>
                   );
                 })}
@@ -638,7 +645,8 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 <div className="text-[11px] text-rose-800 font-semibold flex items-center gap-1">
                   <span>Đã chọn Thân mẫu:</span>
                   <strong className="text-rose-950 underline underline-offset-2">
-                    {allMembers.find(m => m.id === (motherId || fatherSpouseIds[0]))?.fullName || motherName}
+                    {allMembers.find(m => m.id === (motherId || fatherSpouseIds[0]))?.fullName || 
+                      (motherName && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(motherName.trim()) ? motherName : '(Chưa rõ)')}
                   </strong>
                 </div>
               ) : (

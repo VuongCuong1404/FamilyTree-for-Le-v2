@@ -263,13 +263,29 @@ export default function App() {
   // Handler to delete member
   const handleDeleteMember = async (memberId: string) => {
     const memberObj = members.find(m => m.id === memberId);
-    const res = await deleteMemberService(memberId, currentUserRole);
+    const res = await deleteMemberService(memberId, currentUserRole, members);
     if (!res.success) {
       alert(res.error || 'Không thể xóa thành viên.');
       return;
     }
 
-    setMembers(prev => prev.filter(m => m.id !== memberId));
+    setMembers(prev => 
+      prev
+        .filter(m => m.id !== memberId)
+        .map(m => {
+          let updated = { ...m };
+          if (updated.spouseIds && updated.spouseIds.includes(memberId)) {
+            updated.spouseIds = updated.spouseIds.filter(id => id !== memberId);
+          }
+          if (updated.parentId === memberId) {
+            updated.parentId = null;
+          }
+          if (updated.motherId === memberId) {
+            updated.motherId = undefined;
+          }
+          return updated;
+        })
+    );
     setSelectedMember(null);
     showToast(`Đã xóa thành viên "${memberObj?.fullName || 'thành viên'}" khỏi gia phả!`);
   };
