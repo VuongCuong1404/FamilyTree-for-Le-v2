@@ -83,9 +83,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* User Auth Status / Login */}
             {currentUserProfile ? (
               <div className="flex items-center gap-1.5 sm:gap-2 bg-stone-900/90 px-2 sm:px-2.5 py-0.5 rounded-lg border border-amber-900/50">
-                <span className={`w-2 h-2 rounded-full ${
-                  currentUserRole === 'admin' ? 'bg-red-500' : currentUserRole === 'support' ? 'bg-amber-500' : 'bg-sky-500'
-                }`} />
+                {currentUserProfile.avatar_url ? (
+                  <img 
+                    src={currentUserProfile.avatar_url} 
+                    alt="Ảnh tài khoản" 
+                    className="w-4 h-4 rounded-full object-cover border border-amber-400/60 shrink-0" 
+                  />
+                ) : (
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                    currentUserRole === 'admin' ? 'bg-red-500' : currentUserRole === 'support' ? 'bg-amber-500' : 'bg-sky-500'
+                  }`} />
+                )}
                 <span className="font-semibold text-amber-200 truncate max-w-[90px] sm:max-w-[150px]">
                   {currentUserProfile.full_name || currentUserProfile.email}
                 </span>

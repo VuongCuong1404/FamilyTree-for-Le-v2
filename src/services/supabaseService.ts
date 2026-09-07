@@ -969,6 +969,7 @@ export async function getCurrentUserProfile(): Promise<UserProfile | null> {
         full_name: data.full_name || user.user_metadata?.full_name || 'Thành viên',
         phone: data.phone || null,
         role: (data.role as Role) || 'member',
+        avatar_url: data.avatar_url || user.user_metadata?.avatar_url || null,
         created_at: data.created_at,
       };
       return userProf;
@@ -981,6 +982,7 @@ export async function getCurrentUserProfile(): Promise<UserProfile | null> {
       full_name: user.user_metadata?.full_name || 'Thành viên',
       phone: null,
       role: 'member',
+      avatar_url: user.user_metadata?.avatar_url || null,
     };
     return fallbackProf;
   } catch (e) {
@@ -1010,6 +1012,7 @@ export async function fetchAllProfiles(): Promise<{ profiles: UserProfile[]; err
         full_name: 'Lê Văn Cường (Trưởng Ban Quản Trị)',
         phone: '0912345678',
         role: 'admin',
+        avatar_url: null,
         created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
       },
       {
@@ -1018,6 +1021,7 @@ export async function fetchAllProfiles(): Promise<{ profiles: UserProfile[]; err
         full_name: 'Lê Quang Vinh (Thư Ký Ban Trị Sự)',
         phone: '0987654321',
         role: 'support',
+        avatar_url: null,
         created_at: new Date(Date.now() - 15 * 86400000).toISOString(),
       },
       {
@@ -1026,6 +1030,7 @@ export async function fetchAllProfiles(): Promise<{ profiles: UserProfile[]; err
         full_name: 'Lê Thành Long',
         phone: '0903123456',
         role: 'member',
+        avatar_url: null,
         created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
       },
     ];
@@ -1046,6 +1051,7 @@ export async function fetchAllProfiles(): Promise<{ profiles: UserProfile[]; err
       full_name: p.full_name,
       phone: p.phone,
       role: (p.role as Role) || 'member',
+      avatar_url: p.avatar_url || null,
       created_at: p.created_at,
     }));
 
@@ -1081,15 +1087,20 @@ export async function updateProfileRole(userId: string, newRole: Role): Promise<
 }
 
 /**
- * Update any user's profile info (full_name, phone) by Admin in public.profiles table
+ * Update any user's profile info (full_name, phone, avatar_url) by Admin in public.profiles table
  * Allowed by RLS policy `profiles_admin_manage_roles`
  */
 export async function updateProfileByAdminService(
   userId: string,
   fullName: string,
-  phone: string
+  phone: string,
+  avatarUrl?: string | null
 ): Promise<{ success: boolean; profile?: UserProfile; error?: string }> {
   const client = getSupabaseClient();
+  const trimmedName = fullName.trim();
+  const trimmedPhone = phone.trim() || null;
+  const trimmedAvatar = avatarUrl !== undefined ? (avatarUrl?.trim() || null) : undefined;
+
   if (!client) {
     return {
       success: false,
@@ -1097,16 +1108,18 @@ export async function updateProfileByAdminService(
     };
   }
 
-  const trimmedName = fullName.trim();
-  const trimmedPhone = phone.trim() || null;
-
   try {
+    const updatePayload: any = {
+      full_name: trimmedName,
+      phone: trimmedPhone,
+    };
+    if (trimmedAvatar !== undefined) {
+      updatePayload.avatar_url = trimmedAvatar;
+    }
+
     const { data, error } = await client
       .from('profiles')
-      .update({
-        full_name: trimmedName,
-        phone: trimmedPhone,
-      })
+      .update(updatePayload)
       .eq('id', userId)
       .select()
       .single();
@@ -1125,6 +1138,7 @@ export async function updateProfileByAdminService(
       full_name: data.full_name || trimmedName,
       phone: data.phone || trimmedPhone,
       role: (data.role as Role) || 'member',
+      avatar_url: data.avatar_url || null,
       created_at: data.created_at,
     };
 
@@ -1139,38 +1153,100 @@ export async function updateProfileByAdminService(
 }
 
 /**
- * Update current user's profile (full_name and phone) in public.profiles table
+ * Update current user's profile (full_name, phone, avatar_url) in public.profiles table
  * Allowed by RLS policy `profiles_update_own`
  */
 export async function updateOwnProfileService(
   userId: string,
   fullName: string,
-  phone: string
-): Promise<{ success: boolean; profile?: UserProfile; error?: string }> {
+  phone: string,
+  avatarUrl?: string | null
+): Promise<{ success: boolean; profile?: UserProfile; warning?: string; error?: string }> {
   const client = getSupabaseClient();
-  if (!client) {
-    return {
-      success: false,
-      error: 'Chưa kết nối được Supabase. Vui lòng kiểm tra cấu hình kết nối database.',
-    };
-  }
-
   const trimmedName = fullName.trim();
   const trimmedPhone = phone.trim() || null;
+  const trimmedAvatar = avatarUrl !== undefined ? (avatarUrl?.trim() || null) : undefined;
 
-  try {
-    const { data, error } = await client
-      .from('profiles')
-      .update({
+  if (!client) {
+    // Local storage fallback
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_PROFILES);
+      let list: UserProfile[] = saved ? JSON.parse(saved) : [];
+      let updatedProfile: UserProfile = {
+        id: userId,
+        email: null,
         full_name: trimmedName,
         phone: trimmedPhone,
-      })
+        role: 'member',
+        avatar_url: trimmedAvatar !== undefined ? trimmedAvatar : null,
+      };
+      const idx = list.findIndex(p => p.id === userId);
+      if (idx >= 0) {
+        list[idx] = {
+          ...list[idx],
+          full_name: trimmedName,
+          phone: trimmedPhone,
+          avatar_url: trimmedAvatar !== undefined ? trimmedAvatar : list[idx].avatar_url,
+        };
+        updatedProfile = list[idx];
+      } else {
+        list.push(updatedProfile);
+      }
+      localStorage.setItem(LOCAL_STORAGE_PROFILES, JSON.stringify(list));
+      return { success: true, profile: updatedProfile };
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Lỗi lưu hồ sơ cục bộ.' };
+    }
+  }
+
+  try {
+    const updatePayload: any = {
+      full_name: trimmedName,
+      phone: trimmedPhone,
+    };
+    if (trimmedAvatar !== undefined) {
+      updatePayload.avatar_url = trimmedAvatar;
+    }
+
+    const { data, error } = await client
+      .from('profiles')
+      .update(updatePayload)
       .eq('id', userId)
       .select()
       .single();
 
     if (error) {
-      console.error('Supabase profile update error:', error.message);
+      console.warn('Supabase profile update warning:', error.message);
+      // If error is caused by missing avatar_url column in DB
+      if (error.code === '42703' || error.message?.includes('avatar_url')) {
+        const retryRes = await client
+          .from('profiles')
+          .update({
+            full_name: trimmedName,
+            phone: trimmedPhone,
+          })
+          .eq('id', userId)
+          .select()
+          .single();
+
+        if (!retryRes.error && retryRes.data) {
+          const fallbackProfile: UserProfile = {
+            id: retryRes.data.id,
+            email: retryRes.data.email || null,
+            full_name: retryRes.data.full_name || trimmedName,
+            phone: retryRes.data.phone || trimmedPhone,
+            role: (retryRes.data.role as Role) || 'member',
+            avatar_url: trimmedAvatar !== undefined ? trimmedAvatar : null,
+            created_at: retryRes.data.created_at,
+          };
+          return {
+            success: true,
+            profile: fallbackProfile,
+            warning: 'Đã lưu họ tên và số điện thoại. Để lưu ảnh đại diện tài khoản lên Supabase, vui lòng chạy lệnh SQL: ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url text;',
+          };
+        }
+      }
+
       return {
         success: false,
         error: error.message || 'Lỗi cập nhật hồ sơ cá nhân trên Supabase.',
@@ -1183,6 +1259,7 @@ export async function updateOwnProfileService(
       full_name: data.full_name || trimmedName,
       phone: data.phone || trimmedPhone,
       role: (data.role as Role) || 'member',
+      avatar_url: data.avatar_url !== undefined ? data.avatar_url : (trimmedAvatar !== undefined ? trimmedAvatar : null),
       created_at: data.created_at,
     };
 
@@ -1459,7 +1536,7 @@ export async function updateMyAvatarService(
   if (client) {
     try {
       const { data, error } = await client.rpc('update_my_avatar', {
-        new_avatar_url: newAvatarUrl,
+        new_avatar_url: newAvatarUrl || null,
       });
 
       if (error) {
@@ -1492,7 +1569,7 @@ export async function updateMyAvatarService(
       const saved = localStorage.getItem(LOCAL_STORAGE_MEMBERS);
       if (saved) {
         const list: ClanMember[] = JSON.parse(saved);
-        const updated = list.map(m => m.userId === profile.id ? { ...m, avatar: newAvatarUrl } : m);
+        const updated = list.map(m => m.userId === profile.id ? { ...m, avatar: newAvatarUrl || undefined } : m);
         localStorage.setItem(LOCAL_STORAGE_MEMBERS, JSON.stringify(updated));
       }
     }

@@ -216,8 +216,12 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
           </button>
 
           <div className="flex items-start gap-4">
-            <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center font-bold font-serif-clan text-2xl shadow-xl shrink-0 ${genderVisual.avatarBg}`}>
-              {genderVisual.title}
+            <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center font-bold font-serif-clan text-2xl shadow-xl shrink-0 overflow-hidden ${genderVisual.avatarBg}`}>
+              {member.avatar ? (
+                <img src={member.avatar} alt={member.fullName} className="w-full h-full object-cover" />
+              ) : (
+                genderVisual.title
+              )}
             </div>
 
             <div className="min-w-0 flex-1">

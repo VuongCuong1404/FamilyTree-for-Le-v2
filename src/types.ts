@@ -10,6 +10,7 @@ export interface UserProfile {
   full_name: string | null;
   phone: string | null;
   role: Role;
+  avatar_url?: string | null;
   created_at?: string;
 }
 
@@ -78,7 +79,7 @@ export interface Member {
   phone?: string;
   birth_year?: string;
   death_year?: string;
-  avatar_url?: string;
+  avatar_url?: string | null;
   role: Role;
   created_at?: string;
 }
@@ -135,7 +136,7 @@ export interface ClanMember {
   bio?: string;
   restingPlace?: string;
   achievements?: string[];
-  avatar?: string;
+  avatar?: string | null;
   role?: Role;
   orderInFamily?: number;
 }

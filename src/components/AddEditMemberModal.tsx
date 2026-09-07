@@ -14,10 +14,14 @@ import {
   Sparkles,
   Plus,
   Trash2,
-  Search
+  Search,
+  Camera,
+  Upload,
+  Globe,
+  RefreshCw
 } from 'lucide-react';
 import { ClanMember, Gender, SpouseInfo } from '../types';
-import { calculateAgeInfo, getGenderVisuals } from '../utils/genealogyUtils';
+import { calculateAgeInfo, getGenderVisuals, compressImageFile } from '../utils/genealogyUtils';
 import { generateUUID } from '../services/supabaseService';
 
 interface AddEditMemberModalProps {
@@ -59,6 +63,9 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
   const [bio, setBio] = useState('');
   const [restingPlace, setRestingPlace] = useState('');
   const [achievements, setAchievements] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [avatarInputMode, setAvatarInputMode] = useState<'upload' | 'url'>('upload');
+  const [isCompressingAvatar, setIsCompressingAvatar] = useState<boolean>(false);
 
   // Find father and his spouses to determine if "Chọn Thân mẫu" should appear
   const currentFatherId = parentId || (parentToAssign?.gender === 'male' ? parentToAssign.id : null);
@@ -144,6 +151,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setBio(memberToEdit.bio || '');
       setRestingPlace(memberToEdit.restingPlace || '');
       setAchievements(memberToEdit.achievements ? memberToEdit.achievements.join(', ') : '');
+      setAvatarUrl(memberToEdit.avatar || '');
     } else if (parentToAssign) {
       const existingChildren = allMembers.filter(m => m.parentId === parentToAssign.id);
       setFullName('');
@@ -177,6 +185,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setBio('');
       setRestingPlace('');
       setAchievements('');
+      setAvatarUrl('');
     } else {
       setFullName('');
       setGender('male');
@@ -198,9 +207,11 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setBio('');
       setRestingPlace('');
       setAchievements('');
+      setAvatarUrl('');
     }
     setSpouseSearchTerm('');
     setIsSpouseDropdownOpen(false);
+    setAvatarInputMode('upload');
   }, [memberToEdit, parentToAssign, isOpen, allMembers]);
 
   const handleAddSpouseId = (id: string) => {
@@ -211,6 +222,31 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
 
   const handleRemoveSpouseId = (id: string) => {
     setSelectedSpouseIds(prev => prev.filter(x => x !== id));
+  };
+
+  const handleAvatarFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Vui lòng chọn tệp hình ảnh hợp lệ (PNG, JPG, JPEG, WebP).');
+      return;
+    }
+
+    setIsCompressingAvatar(true);
+    try {
+      const compressed = await compressImageFile(file, 360, 360, 0.82);
+      setAvatarUrl(compressed);
+    } catch (err: any) {
+      alert(err.message || 'Lỗi nén ảnh đại diện.');
+    } finally {
+      setIsCompressingAvatar(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveAvatar = () => {
+    setAvatarUrl('');
   };
 
   if (!isOpen) return null;
@@ -240,6 +276,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
     }));
 
     const finalMotherName = motherName.trim() || (motherId ? (allMembers.find(m => m.id === motherId)?.fullName || '') : '');
+    const finalAvatar = avatarUrl.trim() ? avatarUrl.trim() : null;
 
     const newMember: ClanMember = {
       id: memberToEdit ? memberToEdit.id : generateUUID(),
@@ -266,7 +303,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       bio: bio.trim() || undefined,
       restingPlace: !isAlive && restingPlace.trim() ? restingPlace.trim() : undefined,
       achievements: achievementsList.length > 0 ? achievementsList : undefined,
-      avatar: memberToEdit?.avatar,
+      avatar: finalAvatar,
       role: memberToEdit?.role,
     };
 
@@ -333,6 +370,116 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 <option value="male">Nam ♂ (Nam Đinh / Rể)</option>
                 <option value="female">Nữ ♀ (Nữ Giới / Dâu)</option>
               </select>
+            </div>
+          </div>
+
+          {/* Block: Quản lý Ảnh đại diện trên CÂY PHẢ HỆ (Admin / Support) */}
+          <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/90 shadow-2xs">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-amber-800" />
+                <span className="font-bold text-stone-900 text-sm">Ảnh đại diện trên Cây Phả Hệ</span>
+              </div>
+              <span className="text-[11px] font-medium text-amber-900 bg-amber-100/90 border border-amber-300/60 px-2 py-0.5 rounded-md">
+                Hiện trên sơ đồ cây &amp; danh bạ
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              {/* Avatar Preview Box */}
+              <div className="relative shrink-0">
+                <div className="w-20 h-20 rounded-2xl overflow-hidden bg-white border-2 border-amber-800/30 shadow-inner flex items-center justify-center relative">
+                  {avatarUrl ? (
+                    <img 
+                      src={avatarUrl} 
+                      alt="Ảnh đại diện" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-stone-400 p-2 text-center">
+                      <User className="w-8 h-8 text-stone-300 mb-0.5" />
+                      <span className="text-[10px] text-stone-400">Chưa có ảnh</span>
+                    </div>
+                  )}
+
+                  {isCompressingAvatar && (
+                    <div className="absolute inset-0 bg-stone-900/60 flex items-center justify-center">
+                      <RefreshCw className="w-5 h-5 text-white animate-spin" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="flex-1 w-full space-y-2.5">
+                <div className="flex items-center flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAvatarInputMode('upload')}
+                    className={`px-3 py-1.5 rounded-lg font-medium text-xs transition-colors flex items-center gap-1.5 ${
+                      avatarInputMode === 'upload'
+                        ? 'bg-amber-800 text-white shadow-xs'
+                        : 'bg-white text-stone-700 hover:bg-stone-100 border border-stone-200'
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    Tải ảnh từ máy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAvatarInputMode('url')}
+                    className={`px-3 py-1.5 rounded-lg font-medium text-xs transition-colors flex items-center gap-1.5 ${
+                      avatarInputMode === 'url'
+                        ? 'bg-amber-800 text-white shadow-xs'
+                        : 'bg-white text-stone-700 hover:bg-stone-100 border border-stone-200'
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    Dán link ảnh (URL)
+                  </button>
+
+                  {avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAvatar}
+                      className="ml-auto px-2.5 py-1.5 rounded-lg text-xs text-rose-700 hover:bg-rose-100 border border-rose-200 flex items-center gap-1 font-semibold transition-colors"
+                      title="Gỡ ảnh khỏi thành viên này"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Xóa ảnh
+                    </button>
+                  )}
+                </div>
+
+                {avatarInputMode === 'upload' ? (
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-1.5 bg-white border border-stone-300 rounded-xl hover:bg-stone-50 text-stone-800 font-medium text-xs shadow-xs transition-colors">
+                      <Upload className="w-3.5 h-3.5 text-amber-700" />
+                      <span>{avatarUrl ? 'Thay ảnh khác...' : 'Chọn tệp ảnh...'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarFileUpload}
+                        disabled={isCompressingAvatar}
+                        className="hidden"
+                      />
+                    </label>
+                    <span className="text-[11px] text-stone-500 italic">
+                      (Tự động nén &amp; tối ưu hiển thị nhanh)
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="url"
+                      value={avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                      placeholder="Dán đường dẫn ảnh: https://... hoặc data:image/..."
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-white border border-stone-300 text-stone-900 text-xs focus:outline-none focus:border-amber-600"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

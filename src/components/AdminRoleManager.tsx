@@ -411,14 +411,18 @@ export const AdminRoleManager: React.FC<AdminRoleManagerProps> = ({
                       {/* Name */}
                       <td className="py-4 px-4 sm:px-6">
                         <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden ${
                             p.role === 'admin' 
                               ? 'bg-red-100 text-red-900 border border-red-300' 
                               : p.role === 'support' 
                               ? 'bg-amber-100 text-amber-900 border border-amber-300' 
                               : 'bg-sky-100 text-sky-900 border border-sky-300'
                           }`}>
-                            {p.full_name ? p.full_name.charAt(0).toUpperCase() : 'U'}
+                            {p.avatar_url ? (
+                              <img src={p.avatar_url} alt={p.full_name || 'Avatar'} className="w-full h-full object-cover" />
+                            ) : (
+                              p.full_name ? p.full_name.charAt(0).toUpperCase() : 'U'
+                            )}
                           </div>
                           <div>
                             <div className="font-bold text-stone-900 text-sm">

@@ -116,8 +116,12 @@ create table if not exists public.profiles (
   phone text,
   email text,
   role text not null default 'member' check (role in ('admin', 'support', 'member')),
+  avatar_url text,
   created_at timestamptz default now()
 );
+
+-- Nâng cấp bảng profiles nếu đã tồn tại từ trước:
+-- ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url text;
 
 comment on table public.profiles is 'Hồ sơ + phân quyền của người dùng đã đăng nhập. role mặc định là member.';
 
@@ -128,8 +132,8 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, email, full_name)
-  values (new.id, new.email, new.raw_user_meta_data->>'full_name')
+  insert into public.profiles (id, email, full_name, avatar_url)
+  values (new.id, new.email, new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'avatar_url')
   on conflict (id) do nothing;
   return new;
 end;
