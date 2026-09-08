@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Search, 
   Phone, 
@@ -16,9 +16,9 @@ import {
   Printer, 
   Users, 
   Flame, 
-  Calendar,
-  Lock,
-  LogIn
+  Calendar, 
+  Lock, 
+  LogIn 
 } from 'lucide-react';
 import { ClanMember, ClanInfo, Gender, UserProfile, Role } from '../types';
 import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder } from '../utils/genealogyUtils';
@@ -48,6 +48,31 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   const [genFilter, setGenFilter] = useState<number | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'alive' | 'deceased'>('all');
   const [locationFilter, setLocationFilter] = useState('all');
+
+  // Ref cho ô input tìm kiếm và trạng thái cuộn hiển thị nút FAB
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [showScrollSearch, setShowScrollSearch] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      setShowScrollSearch(scrollY > 200);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const handleScrollToSearch = () => {
+    if (searchInputRef.current) {
+      searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      searchInputRef.current.focus({ preventScroll: true });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   const isAdmin = currentUserRole === 'admin' || currentUserProfile?.role === 'admin';
 
@@ -263,23 +288,25 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         
-        {/* Search & Filter Controls Card */}
-        <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-md space-y-4">
+        {/* Search & Filter Controls Card (Sticky dưới navbar, nền solid/blur chống lộ chữ khi cuộn) */}
+        <div className="sticky top-[88px] sm:top-[104px] z-20 bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl border border-stone-200/90 p-4 sm:p-5 shadow-md space-y-3 transition-all">
           
           {/* Main Search Input */}
           <div className="relative">
-            <Search className="w-5 h-5 absolute left-4 top-3.5 text-stone-400" />
+            <Search className="w-5 h-5 absolute left-4 top-3.5 text-stone-400 pointer-events-none" />
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Nhập tên thành viên, danh xưng, số điện thoại, nơi ở, hoặc nghề nghiệp để tìm kiếm..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 border border-stone-300 text-stone-900 text-sm focus:outline-none focus:border-amber-600 focus:bg-white transition-all shadow-inner"
+              className="w-full pl-12 pr-12 py-3 rounded-2xl bg-stone-50 border border-stone-300 text-stone-900 text-sm focus:outline-none focus:border-amber-600 focus:bg-white transition-all shadow-inner"
             />
             {searchTerm && (
               <button
+                type="button"
                 onClick={() => setSearchTerm('')}
-                className="absolute right-4 top-3 text-stone-400 hover:text-stone-700 text-sm font-semibold"
+                className="absolute right-4 top-3 text-stone-400 hover:text-stone-700 text-sm font-semibold cursor-pointer"
               >
                 Xóa
               </button>
@@ -558,6 +585,19 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
         </div>
 
       </div>
+
+      {/* Nút tròn cố định góc phải dưới (FAB) cuộn lên tìm kiếm */}
+      {showScrollSearch && (
+        <button
+          type="button"
+          onClick={handleScrollToSearch}
+          aria-label="Tìm kiếm danh bạ"
+          title="Cuộn lên ô tìm kiếm"
+          className="fixed bottom-24 right-4 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-tr from-amber-800 to-amber-600 hover:from-amber-900 hover:to-amber-700 active:scale-95 text-white shadow-xl shadow-amber-950/40 border border-amber-400/50 flex items-center justify-center transition-all duration-200 cursor-pointer animate-in fade-in zoom-in-75 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+        >
+          <Search className="w-5 h-5 text-amber-100" />
+        </button>
+      )}
 
     </div>
   );
