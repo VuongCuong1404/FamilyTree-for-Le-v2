@@ -67,6 +67,23 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
   const [avatarInputMode, setAvatarInputMode] = useState<'upload' | 'url'>('upload');
   const [isCompressingAvatar, setIsCompressingAvatar] = useState<boolean>(false);
 
+  // Tính toán số thế hệ tối đa động theo dữ liệu dòng họ (tối thiểu là 7 và mở rộng theo dữ liệu)
+  const maxGen = useMemo(() => {
+    const gens = allMembers.map(m => m.generation).filter((g): g is number => typeof g === 'number' && !isNaN(g));
+    const parentNextGen = parentToAssign ? (parentToAssign.generation || 0) + 1 : 0;
+    const memberGen = memberToEdit?.generation || 0;
+    return Math.max(7, ...gens, parentNextGen, memberGen);
+  }, [allMembers, parentToAssign, memberToEdit]);
+
+  // Danh sách options đời từ 1 đến maxGen + 1 để cho phép thêm đời mới hơn hiện có
+  const generationOptions = useMemo(() => {
+    const list: number[] = [];
+    for (let i = 1; i <= maxGen + 1; i++) {
+      list.push(i);
+    }
+    return list;
+  }, [maxGen]);
+
   // Find father and his spouses to determine if "Chọn Thân mẫu" should appear
   const currentFatherId = parentId || (parentToAssign?.gender === 'male' ? parentToAssign.id : null);
   const currentFather = useMemo(() => {
@@ -498,13 +515,11 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 onChange={(e) => setGeneration(Number(e.target.value))}
                 className="w-full px-3 py-2.5 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none focus:border-amber-600 font-medium"
               >
-                <option value={1}>Đời 1 (Thủy Tổ)</option>
-                <option value={2}>Đời 2</option>
-                <option value={3}>Đời 3</option>
-                <option value={4}>Đời 4</option>
-                <option value={5}>Đời 5</option>
-                <option value={6}>Đời 6</option>
-                <option value={7}>Đời 7</option>
+                {generationOptions.map((g) => (
+                  <option key={g} value={g}>
+                    Đời {g} {g === 1 ? '(Thủy Tổ)' : ''}
+                  </option>
+                ))}
               </select>
             </div>
 

@@ -18,7 +18,9 @@ import {
   Flame, 
   Calendar, 
   Lock, 
-  LogIn 
+  LogIn,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { ClanMember, ClanInfo, Gender, UserProfile, Role } from '../types';
 import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder } from '../utils/genealogyUtils';
@@ -49,14 +51,55 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | 'alive' | 'deceased'>('all');
   const [locationFilter, setLocationFilter] = useState('all');
 
+  // Trạng thái mở rộng / thu gọn thanh tìm kiếm và bộ lọc (mặc định mở đầy đủ)
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
+
   // Ref cho ô input tìm kiếm và trạng thái cuộn hiển thị nút FAB
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [showScrollSearch, setShowScrollSearch] = useState(false);
+  const prevPastThresholdRef = useRef(false);
+
+  // Tính số thế hệ tối đa động từ danh sách thành viên (tối thiểu là 7)
+  const maxGen = useMemo(() => {
+    const gens = members.map(m => m.generation).filter((g): g is number => typeof g === 'number' && !isNaN(g));
+    return Math.max(7, ...gens);
+  }, [members]);
+
+  // Options thế hệ từ đời 1 đến maxGen
+  const generationOptions = useMemo(() => {
+    const list: number[] = [];
+    for (let i = 1; i <= maxGen; i++) {
+      list.push(i);
+    }
+    return list;
+  }, [maxGen]);
+
+  // Kiểm tra đang có bất kỳ bộ lọc nào được áp dụng không
+  const hasActiveFilters = Boolean(
+    searchTerm.trim() ||
+    genderFilter !== 'all' ||
+    branchFilter !== 'all' ||
+    genFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    locationFilter !== 'all'
+  );
 
   useEffect(() => {
     const handleScroll = () => {
       const scrollY = window.scrollY || document.documentElement.scrollTop;
-      setShowScrollSearch(scrollY > 200);
+      const isPastThreshold = scrollY > 120;
+      setShowScrollSearch(isPastThreshold);
+
+      // Khi ở đầu trang (<= 120px), luôn mở rộng đầy đủ
+      if (scrollY <= 120) {
+        setFiltersExpanded(true);
+      } else if (!prevPastThresholdRef.current && isPastThreshold) {
+        // Khi cuộn từ trên xuống vượt mốc ~120px: tự động thu gọn nếu không đang focus ô tìm kiếm
+        if (document.activeElement !== searchInputRef.current) {
+          setFiltersExpanded(false);
+        }
+      }
+      prevPastThresholdRef.current = isPastThreshold;
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -66,12 +109,22 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   }, []);
 
   const handleScrollToSearch = () => {
-    if (searchInputRef.current) {
-      searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      searchInputRef.current.focus({ preventScroll: true });
-    } else {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+    setFiltersExpanded(true);
+    setTimeout(() => {
+      if (searchInputRef.current) {
+        searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        searchInputRef.current.focus({ preventScroll: true });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 50);
+  };
+
+  const handleOpenFilters = () => {
+    setFiltersExpanded(true);
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 50);
   };
 
   const isAdmin = currentUserRole === 'admin' || currentUserProfile?.role === 'admin';
@@ -288,156 +341,241 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         
-        {/* Search & Filter Controls Card (Sticky dưới navbar, nền solid/blur chống lộ chữ khi cuộn) */}
-        <div className="sticky top-[88px] sm:top-[104px] z-20 bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl border border-stone-200/90 p-4 sm:p-5 shadow-md space-y-3 transition-all">
-          
-          {/* Main Search Input */}
-          <div className="relative">
-            <Search className="w-5 h-5 absolute left-4 top-3.5 text-stone-400 pointer-events-none" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Nhập tên thành viên, danh xưng, số điện thoại, nơi ở, hoặc nghề nghiệp để tìm kiếm..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-12 py-3 rounded-2xl bg-stone-50 border border-stone-300 text-stone-900 text-sm focus:outline-none focus:border-amber-600 focus:bg-white transition-all shadow-inner"
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-4 top-3 text-stone-400 hover:text-stone-700 text-sm font-semibold cursor-pointer"
-              >
-                Xóa
-              </button>
-            )}
-          </div>
-
-          {/* Quick Filter Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 text-xs">
-            
-            {/* Quick Gender Filter (Tất cả, Nam ♂, Nữ ♀) */}
-            <div>
-              <label className="block text-stone-600 font-semibold mb-1">Giới tính:</label>
-              <div className="flex items-center rounded-xl bg-stone-100 p-1 border border-stone-200">
-                <button
-                  type="button"
-                  onClick={() => setGenderFilter('all')}
-                  className={`flex-1 py-1 rounded-lg text-center font-bold transition-all text-[11px] ${
-                    genderFilter === 'all' ? 'bg-amber-800 text-white shadow-xs' : 'text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  Tất cả
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGenderFilter('male')}
-                  className={`flex-1 py-1 rounded-lg text-center font-bold transition-all text-[11px] ${
-                    genderFilter === 'male' ? 'bg-sky-600 text-white shadow-xs' : 'text-sky-700 hover:bg-sky-100'
-                  }`}
-                >
-                  Nam ♂
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGenderFilter('female')}
-                  className={`flex-1 py-1 rounded-lg text-center font-bold transition-all text-[11px] ${
-                    genderFilter === 'female' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-700 hover:bg-rose-100'
-                  }`}
-                >
-                  Nữ ♀
-                </button>
+        {/* Search & Filter Controls: Tách 2 chế độ: Thu gọn (mỏng) khi cuộn > 120px và Mở rộng đầy đủ */}
+        {!filtersExpanded ? (
+          /* Slim Sticky Bar khi thu gọn (chỉ mỏng ~48px-52px chiều cao) */
+          <div className="sticky top-[88px] sm:top-[104px] z-20 bg-white/95 backdrop-blur-md rounded-2xl border border-stone-200/90 px-3.5 py-2.5 sm:px-4 sm:py-3 shadow-md transition-all flex items-center justify-between gap-3">
+            <div 
+              onClick={handleOpenFilters}
+              className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer select-none"
+              title="Nhấn để mở đầy đủ thanh tìm kiếm & bộ lọc"
+            >
+              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center shrink-0 border border-amber-200/60">
+                <Search className="w-4 h-4 text-amber-800" />
+              </div>
+              <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-stone-800 truncate">
+                  {searchTerm.trim() ? (
+                    <>Từ khóa: <strong className="text-amber-900 font-bold">"{searchTerm}"</strong></>
+                  ) : (
+                    'Tìm kiếm & Lọc danh bạ'
+                  )}
+                </span>
+                <span className="shrink-0 px-2.5 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200 text-[11px] font-bold">
+                  {filteredMembers.length} kết quả
+                </span>
+                {hasActiveFilters && (
+                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-amber-100/90 text-amber-900 border border-amber-200/70 text-[10px] font-bold">
+                    Đang lọc
+                  </span>
+                )}
               </div>
             </div>
 
-            {/* Status Filter */}
-            <div>
-              <label className="block text-stone-600 font-semibold mb-1">Tình trạng:</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none"
-              >
-                <option value="all">Tất cả ({members.length})</option>
-                <option value="alive">Đang sinh sống ({stats.living})</option>
-                <option value="deceased">Tiền nhân ({stats.deceased})</option>
-              </select>
-            </div>
-
-            {/* Branch Filter */}
-            <div>
-              <label className="block text-stone-600 font-semibold mb-1">Chi phái:</label>
-              <select
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
-                className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none"
-              >
-                <option value="all">Tất cả các Chi</option>
-                {branches.map(b => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Generation Filter */}
-            <div>
-              <label className="block text-stone-600 font-semibold mb-1">Thế hệ (Đời):</label>
-              <select
-                value={genFilter}
-                onChange={(e) => setGenFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none"
-              >
-                <option value="all">Tất cả thế hệ (1 - 7)</option>
-                <option value={1}>Đời 1 (Cụ Thủy Tổ)</option>
-                <option value={2}>Đời 2</option>
-                <option value={3}>Đời 3</option>
-                <option value={4}>Đời 4</option>
-                <option value={5}>Đời 5 (Đương đại)</option>
-                <option value={6}>Đời 6 (Thế hệ trẻ)</option>
-                <option value={7}>Đời 7 (Hậu duệ)</option>
-              </select>
-            </div>
-
-            {/* Location Filter */}
-            <div>
-              <label className="block text-stone-600 font-semibold mb-1">Tỉnh / Thành phố:</label>
-              <select
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-                className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none"
-              >
-                <option value="all">Tất cả địa phương</option>
-                {locations.map(loc => (
-                  <option key={loc} value={loc}>{loc}</option>
-                ))}
-              </select>
-            </div>
-
-          </div>
-
-          {/* Result Count and Clear Filters */}
-          <div className="flex items-center justify-between pt-2 border-t border-stone-100 text-xs text-stone-600">
-            <div>
-              Tìm thấy <strong>{filteredMembers.length}</strong> kết quả phù hợp
-            </div>
-            {(searchTerm || genderFilter !== 'all' || branchFilter !== 'all' || genFilter !== 'all' || statusFilter !== 'all' || locationFilter !== 'all') && (
+            <div className="flex items-center gap-2 shrink-0">
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSearchTerm('');
+                    setGenderFilter('all');
+                    setBranchFilter('all');
+                    setGenFilter('all');
+                    setStatusFilter('all');
+                    setLocationFilter('all');
+                  }}
+                  className="px-2 py-1 text-xs text-amber-800 hover:text-amber-900 font-semibold hover:underline hidden sm:block cursor-pointer"
+                >
+                  Xóa lọc
+                </button>
+              )}
               <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setGenderFilter('all');
-                  setBranchFilter('all');
-                  setGenFilter('all');
-                  setStatusFilter('all');
-                  setLocationFilter('all');
-                }}
-                className="text-amber-800 font-semibold hover:underline"
+                type="button"
+                onClick={handleOpenFilters}
+                className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-gradient-to-r from-amber-800 to-amber-700 hover:from-amber-900 hover:to-amber-800 active:scale-95 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+                title="Mở thanh tìm kiếm và bộ lọc"
               >
-                Đặt lại toàn bộ bộ lọc
+                <Filter className="w-3.5 h-3.5" />
+                <span>Lọc / Mở tìm kiếm</span>
               </button>
-            )}
+            </div>
           </div>
+        ) : (
+          /* Full Search & Filter Controls Card (khi ở đầu trang hoặc bấm mở rộng) */
+          <div className="sticky top-[88px] sm:top-[104px] z-20 bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl border border-stone-200/90 p-4 sm:p-5 shadow-md space-y-3 transition-all">
+            {/* Main Search Input & Nút Thu Gọn */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-5 h-5 absolute left-4 top-3.5 text-stone-400 pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Nhập tên thành viên, danh xưng, số điện thoại, nơi ở, hoặc nghề nghiệp để tìm kiếm..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-12 pr-12 py-3 rounded-2xl bg-stone-50 border border-stone-300 text-stone-900 text-sm focus:outline-none focus:border-amber-600 focus:bg-white transition-all shadow-inner"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-4 top-3 text-stone-400 hover:text-stone-700 text-sm font-semibold cursor-pointer"
+                  >
+                    Xóa
+                  </button>
+                )}
+              </div>
 
-        </div>
+              {showScrollSearch && (
+                <button
+                  type="button"
+                  onClick={() => setFiltersExpanded(false)}
+                  className="px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-2xl bg-stone-100 hover:bg-stone-200 active:scale-95 text-stone-600 hover:text-stone-900 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 border border-stone-200"
+                  title="Thu gọn bộ lọc"
+                >
+                  <ChevronUp className="w-4 h-4" />
+                  <span className="hidden sm:inline">Thu gọn</span>
+                </button>
+              )}
+            </div>
+
+            {/* Quick Filter Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 text-xs">
+              
+              {/* Quick Gender Filter (Tất cả, Nam ♂, Nữ ♀) */}
+              <div>
+                <label className="block text-stone-600 font-semibold mb-1">Giới tính:</label>
+                <div className="flex items-center rounded-xl bg-stone-100 p-1 border border-stone-200">
+                  <button
+                    type="button"
+                    onClick={() => setGenderFilter('all')}
+                    className={`flex-1 py-1 rounded-lg text-center font-bold transition-all text-[11px] ${
+                      genderFilter === 'all' ? 'bg-amber-800 text-white shadow-xs' : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    Tất cả
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGenderFilter('male')}
+                    className={`flex-1 py-1 rounded-lg text-center font-bold transition-all text-[11px] ${
+                      genderFilter === 'male' ? 'bg-sky-600 text-white shadow-xs' : 'text-sky-700 hover:bg-sky-100'
+                    }`}
+                  >
+                    Nam ♂
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGenderFilter('female')}
+                    className={`flex-1 py-1 rounded-lg text-center font-bold transition-all text-[11px] ${
+                      genderFilter === 'female' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-700 hover:bg-rose-100'
+                    }`}
+                  >
+                    Nữ ♀
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Filter */}
+              <div>
+                <label className="block text-stone-600 font-semibold mb-1">Tình trạng:</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none"
+                >
+                  <option value="all">Tất cả ({members.length})</option>
+                  <option value="alive">Đang sinh sống ({stats.living})</option>
+                  <option value="deceased">Tiền nhân ({stats.deceased})</option>
+                </select>
+              </div>
+
+              {/* Branch Filter */}
+              <div>
+                <label className="block text-stone-600 font-semibold mb-1">Chi phái:</label>
+                <select
+                  value={branchFilter}
+                  onChange={(e) => setBranchFilter(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none"
+                >
+                  <option value="all">Tất cả các Chi</option>
+                  {branches.map(b => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Generation Filter - Động theo maxGen */}
+              <div>
+                <label className="block text-stone-600 font-semibold mb-1">Thế hệ (Đời):</label>
+                <select
+                  value={genFilter}
+                  onChange={(e) => setGenFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none"
+                >
+                  <option value="all">Tất cả thế hệ (1 - {maxGen})</option>
+                  {generationOptions.map((g) => (
+                    <option key={g} value={g}>
+                      Đời {g} {g === 1 ? '(Cụ Thủy Tổ)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Location Filter */}
+              <div>
+                <label className="block text-stone-600 font-semibold mb-1">Tỉnh / Thành phố:</label>
+                <select
+                  value={locationFilter}
+                  onChange={(e) => setLocationFilter(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none"
+                >
+                  <option value="all">Tất cả địa phương</option>
+                  {locations.map(loc => (
+                    <option key={loc} value={loc}>{loc}</option>
+                  ))}
+                </select>
+              </div>
+
+            </div>
+
+            {/* Result Count, Clear Filters and Collapse */}
+            <div className="flex items-center justify-between pt-2 border-t border-stone-100 text-xs text-stone-600">
+              <div className="flex items-center gap-2">
+                <span>Tìm thấy <strong>{filteredMembers.length}</strong> kết quả phù hợp</span>
+              </div>
+              <div className="flex items-center gap-3">
+                {hasActiveFilters && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm('');
+                      setGenderFilter('all');
+                      setBranchFilter('all');
+                      setGenFilter('all');
+                      setStatusFilter('all');
+                      setLocationFilter('all');
+                    }}
+                    className="text-amber-800 font-semibold hover:underline cursor-pointer"
+                  >
+                    Đặt lại toàn bộ bộ lọc
+                  </button>
+                )}
+                {showScrollSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setFiltersExpanded(false)}
+                    className="text-stone-500 hover:text-stone-800 font-medium hover:underline flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    Thu gọn
+                  </button>
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
 
         {/* Directory Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -586,13 +724,13 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
 
       </div>
 
-      {/* Nút tròn cố định góc phải dưới (FAB) cuộn lên tìm kiếm */}
+      {/* Nút tròn cố định góc phải dưới (FAB) cuộn lên và mở tìm kiếm */}
       {showScrollSearch && (
         <button
           type="button"
           onClick={handleScrollToSearch}
-          aria-label="Tìm kiếm danh bạ"
-          title="Cuộn lên ô tìm kiếm"
+          aria-label="Mở bộ lọc & tìm kiếm danh bạ"
+          title="Mở bộ lọc & tìm kiếm danh bạ"
           className="fixed bottom-24 right-4 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-tr from-amber-800 to-amber-600 hover:from-amber-900 hover:to-amber-700 active:scale-95 text-white shadow-xl shadow-amber-950/40 border border-amber-400/50 flex items-center justify-center transition-all duration-200 cursor-pointer animate-in fade-in zoom-in-75 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
         >
           <Search className="w-5 h-5 text-amber-100" />
