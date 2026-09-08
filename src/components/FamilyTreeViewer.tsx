@@ -522,8 +522,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         }
       });
 
-      // Fit to container screen on initial render
-      chart.updateTree({ initial: true, tree_position: 'fit' });
+      // Tắt animation để mở cây nhanh (transition_time: 0)
+      chart.updateTree({ initial: true, tree_position: 'fit', transition_time: 0 });
       chartInstanceRef.current = chart;
     } catch (err) {
       console.error('Error rendering family-chart:', err);
@@ -537,28 +537,32 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     };
   }, [chartData, searchQuery, genderFilter, viewMode, maxGeneration]);
 
-  // Zoom and tree position handlers powered by family-chart and D3 Zoom
+  // Zoom and tree position handlers powered by family-chart and D3 Zoom (Tắt animation để mở cây nhanh)
   const handleZoomIn = () => {
     if (chartInstanceRef.current?.svg) {
-      f3.handlers.manualZoom({ amount: 1.25, svg: chartInstanceRef.current.svg, transition_time: 250 });
+      // Tắt animation để mở cây nhanh
+      f3.handlers.manualZoom({ amount: 1.25, svg: chartInstanceRef.current.svg, transition_time: 0 });
     }
   };
 
   const handleZoomOut = () => {
     if (chartInstanceRef.current?.svg) {
-      f3.handlers.manualZoom({ amount: 0.8, svg: chartInstanceRef.current.svg, transition_time: 250 });
+      // Tắt animation để mở cây nhanh
+      f3.handlers.manualZoom({ amount: 0.8, svg: chartInstanceRef.current.svg, transition_time: 0 });
     }
   };
 
   const handleFitTree = () => {
     if (chartInstanceRef.current) {
-      chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 400 });
+      // Tắt animation để mở cây nhanh
+      chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
     }
   };
 
   const handleCenterRoot = () => {
     if (chartInstanceRef.current) {
-      chartInstanceRef.current.updateTree({ tree_position: 'main_to_middle', transition_time: 400 });
+      // Tắt animation để mở cây nhanh
+      chartInstanceRef.current.updateTree({ tree_position: 'main_to_middle', transition_time: 0 });
     }
   };
 
