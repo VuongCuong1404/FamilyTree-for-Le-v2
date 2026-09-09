@@ -444,13 +444,30 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
             )}
 
             {/* Occupation or Address */}
-            {member.isAlive && (member.occupation || member.address) && (
-              <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 sm:col-span-2">
-                <span className="text-stone-400 font-medium block mb-1">Nghề nghiệp & Nơi cư trú:</span>
-                <span className="font-semibold text-stone-800 text-sm">
-                  {[member.occupation, member.address].filter(Boolean).join(' • ')}
-                </span>
-              </div>
+            {member.isAlive ? (
+              (member.occupation || member.address) && (
+                <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 sm:col-span-2">
+                  <span className="text-stone-400 font-medium block mb-1">Nghề nghiệp & Nơi cư trú:</span>
+                  <span className="font-semibold text-stone-800 text-sm">
+                    {[member.occupation, member.address].filter(Boolean).join(' • ')}
+                  </span>
+                </div>
+              )
+            ) : (
+              <>
+                {member.address && (
+                  <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 sm:col-span-2">
+                    <span className="text-stone-400 font-medium block mb-1">Nguyên quán / Quê quán:</span>
+                    <span className="font-semibold text-stone-800 text-sm">{member.address}</span>
+                  </div>
+                )}
+                {member.occupation && (
+                  <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 sm:col-span-2">
+                    <span className="text-stone-400 font-medium block mb-1">Nghề nghiệp / Chức vụ:</span>
+                    <span className="font-semibold text-stone-800 text-sm">{member.occupation}</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

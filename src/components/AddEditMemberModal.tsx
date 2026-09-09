@@ -1305,9 +1305,9 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             )}
           </div>
 
-          {/* Row 6: Contact & Address for living */}
-          {isAlive && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Row 6: Contact & Address */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {isAlive && (
               <div>
                 <label className="block text-stone-700 font-bold mb-1">Số điện thoại liên lạc:</label>
                 <input
@@ -1318,18 +1318,20 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                   className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none"
                 />
               </div>
-              <div>
-                <label className="block text-stone-700 font-bold mb-1">Nơi ở / Cư trú hiện tại:</label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Ví dụ: Cầu Giấy, Hà Nội"
-                  className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none"
-                />
-              </div>
+            )}
+            <div className={!isAlive ? "sm:col-span-2" : ""}>
+              <label className="block text-stone-700 font-bold mb-1">
+                {isAlive ? "Nơi ở / Cư trú hiện tại:" : "Nguyên quán / Quê quán (địa chỉ ghi trên danh bạ):"}
+              </label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder={isAlive ? "Ví dụ: Cầu Giấy, Hà Nội" : "Ví dụ: Làng Thượng, Quỳnh Đôi, Quỳnh Lưu, Nghệ An"}
+                className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none"
+              />
             </div>
-          )}
+          </div>
 
           {/* Row 7: Occupation & Achievements */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
