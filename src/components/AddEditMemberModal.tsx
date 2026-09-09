@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   X, 
   UserPlus, 
@@ -9,16 +9,16 @@ import {
   Phone, 
   Calendar, 
   Briefcase, 
-  Award,
-  Layers,
-  Sparkles,
-  Plus,
-  Trash2,
-  Search,
-  Camera,
-  Upload,
-  Globe,
-  RefreshCw
+  Award, 
+  Layers, 
+  Sparkles, 
+  Plus, 
+  Trash2, 
+  Search, 
+  Camera, 
+  Upload, 
+  Globe, 
+  RefreshCw 
 } from 'lucide-react';
 import { ClanMember, Gender, SpouseInfo } from '../types';
 import { calculateAgeInfo, getGenderVisuals, compressImageFile } from '../utils/genealogyUtils';
@@ -28,7 +28,7 @@ interface AddEditMemberModalProps {
   isOpen: boolean;
   memberToEdit?: ClanMember | null;
   parentToAssign?: ClanMember | null;
-  allMembers: ClanMember[];
+  allMembers?: ClanMember[];
   onClose: () => void;
   onSave: (member: ClanMember) => void;
 }
@@ -37,7 +37,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
   isOpen,
   memberToEdit,
   parentToAssign,
-  allMembers,
+  allMembers = [],
   onClose,
   onSave,
 }) => {
@@ -88,6 +88,19 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
   const [parentSearchTerm, setParentSearchTerm] = useState('');
   const [parentBranchFilter, setParentBranchFilter] = useState('all');
   const [parentGenFilter, setParentGenFilter] = useState<'all' | number>('all');
+  const [isParentDropdownOpen, setIsParentDropdownOpen] = useState(false);
+  const parentSearchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Đóng panel gợi ý người nối nhánh khi click ra ngoài
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (parentSearchContainerRef.current && !parentSearchContainerRef.current.contains(e.target as Node)) {
+        setIsParentDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // State cho Thân mẫu / người còn lại (khi người nối nhánh chưa có spouse_ids)
   const [isMotherNotInSystem, setIsMotherNotInSystem] = useState(false);
@@ -335,6 +348,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
     setParentSearchTerm('');
     setParentBranchFilter('all');
     setParentGenFilter('all');
+    setIsParentDropdownOpen(false);
     setMotherSearchTerm('');
     setIsMotherDropdownOpen(false);
     setSpouseSearchTerm('');
@@ -691,23 +705,80 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
 
             {/* Compact search and filters for parent */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-0.5">
-              <div className="relative sm:col-span-1">
-                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <div ref={parentSearchContainerRef} className="relative sm:col-span-1">
+                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={parentSearchTerm}
-                  onChange={(e) => setParentSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setParentSearchTerm(e.target.value);
+                    setIsParentDropdownOpen(true);
+                  }}
+                  onFocus={() => setIsParentDropdownOpen(true)}
                   placeholder="Tìm tên người nối nhánh..."
                   className="w-full pl-7 pr-6 py-1.5 text-xs rounded-lg bg-white border border-stone-300 text-stone-900 placeholder:text-stone-400 focus:outline-none focus:border-amber-600 shadow-2xs font-medium"
                 />
                 {parentSearchTerm && (
                   <button
                     type="button"
-                    onClick={() => setParentSearchTerm('')}
+                    onClick={() => {
+                      setParentSearchTerm('');
+                    }}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 text-xs cursor-pointer"
                   >
                     ✕
                   </button>
+                )}
+
+                {/* Panel gợi ý ngay dưới ô tìm */}
+                {isParentDropdownOpen && (
+                  <div className="absolute z-30 left-0 w-full sm:w-[360px] md:w-[400px] mt-1 max-h-48 overflow-y-auto rounded-xl bg-white border border-amber-300 shadow-xl p-1 space-y-1">
+                    <div className="px-2 py-1 text-[10px] font-bold text-stone-500 uppercase tracking-wider flex justify-between items-center border-b border-stone-100 bg-stone-50 rounded-t-lg sticky top-0 z-10">
+                      <span>Gợi ý ({sortedCandidateParents.length} người)</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setIsParentDropdownOpen(false)}
+                        className="text-stone-400 hover:text-stone-700 text-xs cursor-pointer font-bold px-1"
+                      >
+                        Đóng ✕
+                      </button>
+                    </div>
+
+                    {sortedCandidateParents.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-stone-500">
+                        Không tìm thấy thành viên phù hợp
+                      </div>
+                    ) : (
+                      sortedCandidateParents.slice(0, 20).map(cand => (
+                        <button
+                          key={cand.id}
+                          type="button"
+                          onClick={() => {
+                            handleSelectParent(cand.id);
+                            setIsParentDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-amber-50 flex items-center justify-between gap-2 group transition-colors cursor-pointer ${
+                            parentId === cand.id ? 'bg-amber-100/70 font-semibold' : ''
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-[10px] shrink-0 ${cand.gender === 'male' ? 'bg-sky-100 text-sky-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {cand.gender === 'male' ? '♂' : '♀'}
+                            </span>
+                            <span className="font-semibold text-stone-900 text-xs truncate group-hover:text-amber-900">
+                              {cand.fullName}
+                            </span>
+                            <span className="text-[11px] text-stone-500 truncate">
+                              · Đời {cand.generation} · {cand.branch} · {cand.gender === 'male' ? 'Nam' : 'Nữ'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            {parentId === cand.id ? 'Đang chọn' : 'Chọn'}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
                 )}
               </div>
 
