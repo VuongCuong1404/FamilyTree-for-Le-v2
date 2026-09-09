@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { ClanMember, ClanInfo, UserProfile, Role } from '../types';
 import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder } from '../utils/genealogyUtils';
+import { MemberListCard } from './MemberListCard';
 
 interface FamilyTreeViewerProps {
   members: ClanMember[];
@@ -1510,75 +1511,16 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {list.map((member) => {
-                      const ageInfo = calculateAgeInfo(member.birthYear, member.deathYear, member.isAlive);
-                      const genderVisual = getGenderVisuals(member.gender, member.generation);
-
-                      return (
-                        <div
-                          key={member.id}
-                          onClick={() => onSelectMember(member)}
-                          className="p-5 rounded-2xl bg-stone-50 hover:bg-amber-50/70 border border-stone-200 hover:border-amber-400 transition-all cursor-pointer group shadow-xs hover:shadow-md"
-                        >
-                          <div className="flex items-center justify-between mb-2.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-900">
-                                {member.branch}
-                              </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${genderVisual.badgeClass}`}>
-                                {genderVisual.label}
-                              </span>
-                            </div>
-
-                            <span className={`text-[11px] font-bold ${member.isAlive ? 'text-emerald-700' : 'text-stone-500'}`}>
-                              {member.isAlive ? '• Còn sống' : '• Tiền nhân'}
-                            </span>
-                          </div>
-
-                          <div className="flex items-start gap-3">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold font-serif-clan text-xs shadow-xs ${genderVisual.avatarBg}`}>
-                              {genderVisual.title}
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                              <h4 className="font-bold text-base font-serif-clan text-stone-900 group-hover:text-amber-900 transition-colors truncate">
-                                {member.fullName} {member.title ? `(${member.title})` : ''}
-                              </h4>
-
-                              <div className="text-xs font-semibold text-stone-700 mt-1">
-                                {ageInfo.formattedText}
-                              </div>
-
-                              {(() => {
-                                const spNamesFromIds = (member.spouseIds && member.spouseIds.length > 0)
-                                  ? member.spouseIds.map(sid => members.find(x => x.id === sid)?.fullName).filter(Boolean)
-                                  : [];
-                                const spText = spNamesFromIds.length > 0
-                                  ? spNamesFromIds.join(', ')
-                                  : (member.spouseList && member.spouseList.length > 0
-                                      ? member.spouseList.map(s => s.name + (s.note ? ` (${s.note})` : '')).join(', ')
-                                      : (member.spouse && !/^[0-9a-f-]{36}$/i.test(member.spouse.trim()) ? member.spouse : ''));
-                                if (!spText) return null;
-                                return (
-                                  <div className="text-xs text-stone-500 mt-1 truncate flex items-center gap-1">
-                                    <Heart className="w-3 h-3 text-rose-500 shrink-0" />
-                                    <span title={spText}>
-                                      Phối ngẫu: {spText}
-                                    </span>
-                                  </div>
-                                );
-                              })()}
-
-                              {member.address && (
-                                <div className="text-xs text-stone-500 mt-0.5 truncate">
-                                  Nơi ở: {member.address}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {list.map((member) => (
+                      <MemberListCard
+                        key={member.id}
+                        member={member}
+                        allMembers={members}
+                        showSpouse={true}
+                        showPhone={false}
+                        onClick={() => onSelectMember(member)}
+                      />
+                    ))}
                   </div>
                 </div>
               );
