@@ -84,37 +84,137 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
     return list;
   }, [maxGen]);
 
-  // Find father and his spouses to determine if "Chọn Thân mẫu" should appear
-  const currentFatherId = parentId || (parentToAssign?.gender === 'male' ? parentToAssign.id : null);
-  const currentFather = useMemo(() => {
-    return currentFatherId ? allMembers.find(m => m.id === currentFatherId) : null;
-  }, [currentFatherId, allMembers]);
+  // State cho bộ lọc & tìm kiếm Người nối nhánh trên cây (parentId)
+  const [parentSearchTerm, setParentSearchTerm] = useState('');
+  const [parentBranchFilter, setParentBranchFilter] = useState('all');
+  const [parentGenFilter, setParentGenFilter] = useState<'all' | number>('all');
 
-  const fatherSpouseIds = useMemo(() => {
+  // State cho Thân mẫu / người còn lại (khi người nối nhánh chưa có spouse_ids)
+  const [isMotherNotInSystem, setIsMotherNotInSystem] = useState(false);
+  const [motherSearchTerm, setMotherSearchTerm] = useState('');
+  const [isMotherDropdownOpen, setIsMotherDropdownOpen] = useState(false);
+
+  // Người nối nhánh hiện tại (parentId)
+  const currentParentId = parentId || (parentToAssign ? parentToAssign.id : null);
+  const currentParent = useMemo(() => {
+    return currentParentId ? allMembers.find(m => m.id === currentParentId) : null;
+  }, [currentParentId, allMembers]);
+
+  // Phối ngẫu đã liên kết của người nối nhánh (đã loại bỏ ID mồ côi)
+  const parentSpouseIds = useMemo(() => {
     let ids: string[] = [];
-    if (currentFather) {
-      const direct = currentFather.spouseIds || [];
-      const reverse = allMembers.filter(m => m.id !== currentFather.id && m.spouseIds?.includes(currentFather.id)).map(m => m.id);
-      ids = Array.from(new Set([...direct, ...reverse]));
-    } else if (parentToAssign?.gender === 'female') {
-      const direct = parentToAssign.spouseIds || [];
-      const reverse = allMembers.filter(m => m.id !== parentToAssign.id && m.spouseIds?.includes(parentToAssign.id)).map(m => m.id);
+    if (currentParent) {
+      const direct = currentParent.spouseIds || [];
+      const reverse = allMembers.filter(m => m.id !== currentParent.id && m.spouseIds?.includes(currentParent.id)).map(m => m.id);
       ids = Array.from(new Set([...direct, ...reverse]));
     }
     // Chỉ giữ ID tồn tại trong allMembers, loại bỏ hoàn toàn các ID mồ côi đã bị xóa
     return ids.filter(id => allMembers.some(m => m.id === id));
-  }, [currentFather, allMembers, parentToAssign]);
+  }, [currentParent, allMembers]);
 
-  // If father has spouses, automatically ensure motherId is set to valid spouse
+  // Tự động gán phối ngẫu đầu tiên nếu người nối nhánh có phối ngẫu và chưa chọn
   useEffect(() => {
-    if (fatherSpouseIds.length >= 1) {
-      if (!motherId || !fatherSpouseIds.includes(motherId)) {
-        setMotherId(fatherSpouseIds[0]);
-        const mMem = allMembers.find(m => m.id === fatherSpouseIds[0]);
+    if (parentSpouseIds.length >= 1) {
+      if (!motherId || !parentSpouseIds.includes(motherId)) {
+        setMotherId(parentSpouseIds[0]);
+        const mMem = allMembers.find(m => m.id === parentSpouseIds[0]);
         if (mMem) setMotherName(mMem.fullName);
       }
     }
-  }, [fatherSpouseIds, motherId, allMembers]);
+  }, [parentSpouseIds, motherId, allMembers]);
+
+  // Danh sách ứng viên người nối nhánh (Cả Nam và Nữ, trừ chính người đang sửa)
+  const candidateParents = useMemo(() => {
+    const curId = memberToEdit?.id;
+    return allMembers.filter(m => {
+      if (curId && m.id === curId) return false;
+      if (parentBranchFilter !== 'all' && m.branch !== parentBranchFilter) return false;
+      if (parentGenFilter !== 'all' && m.generation !== Number(parentGenFilter)) return false;
+      if (parentSearchTerm.trim()) {
+        const q = parentSearchTerm.trim().toLowerCase();
+        const matchName = m.fullName.toLowerCase().includes(q);
+        const matchBranch = (m.branch || '').toLowerCase().includes(q);
+        const matchGen = String(m.generation).includes(q);
+        const matchYear = m.birthYear ? String(m.birthYear).includes(q) : false;
+        if (!matchName && !matchBranch && !matchGen && !matchYear) return false;
+      }
+      return true;
+    });
+  }, [allMembers, memberToEdit, parentBranchFilter, parentGenFilter, parentSearchTerm]);
+
+  const sortedCandidateParents = useMemo(() => {
+    return [...candidateParents].sort((a, b) => {
+      if (a.generation !== b.generation) return a.generation - b.generation;
+      return a.fullName.localeCompare(b.fullName, 'vi');
+    });
+  }, [candidateParents]);
+
+  const selectedParentMem = useMemo(() => {
+    return parentId ? allMembers.find(m => m.id === parentId) : null;
+  }, [parentId, allMembers]);
+
+  // Danh sách ứng viên Thân mẫu / người còn lại (khi người nối nhánh không có spouse_ids)
+  const candidateMotherMembers = useMemo(() => {
+    const curId = memberToEdit?.id;
+    const q = motherSearchTerm.trim().toLowerCase();
+
+    return allMembers.filter(m => {
+      if (curId && m.id === curId) return false;
+      if (parentId && m.id === parentId) return false;
+      if (motherId && m.id === motherId) return false;
+
+      if (!q) return true;
+
+      return (
+        m.fullName.toLowerCase().includes(q) ||
+        (m.branch && m.branch.toLowerCase().includes(q)) ||
+        String(m.generation).includes(q) ||
+        (m.birthYear && String(m.birthYear).includes(q))
+      );
+    });
+  }, [allMembers, memberToEdit, parentId, motherId, motherSearchTerm]);
+
+  const selectedMotherMem = useMemo(() => {
+    return motherId ? allMembers.find(m => m.id === motherId) : null;
+  }, [motherId, allMembers]);
+
+  // Hàm chọn người nối nhánh trên cây
+  const handleSelectParent = (newPId: string | null) => {
+    setParentId(newPId);
+    if (!newPId) {
+      setMotherId(null);
+      setMotherName('');
+      setIsMotherNotInSystem(false);
+      return;
+    }
+    const parentMem = allMembers.find(m => m.id === newPId);
+    if (!parentMem) return;
+
+    const direct = parentMem.spouseIds || [];
+    const reverse = allMembers.filter(m => m.id !== parentMem.id && m.spouseIds?.includes(parentMem.id)).map(m => m.id);
+    const pSpouseList = Array.from(new Set([...direct, ...reverse])).filter(id => allMembers.some(m => m.id === id));
+
+    if (pSpouseList.length >= 1) {
+      setMotherId(pSpouseList[0]);
+      const mMem = allMembers.find(m => m.id === pSpouseList[0]);
+      setMotherName(mMem?.fullName || '');
+      setIsMotherNotInSystem(false);
+    } else {
+      setMotherId(null);
+      setMotherName(parentMem.spouse || '');
+      setIsMotherNotInSystem(Boolean(parentMem.spouse && parentMem.spouse.trim()));
+    }
+
+    // Gợi ý đời và nhánh nếu đang thêm mới
+    if (!memberToEdit) {
+      setGeneration(parentMem.generation + 1);
+      if (parentMem.gender === 'female') {
+        setBranch('Chi Ngoại');
+      } else if (parentMem.branch) {
+        setBranch(parentMem.branch);
+      }
+    }
+  };
 
   // Candidates for spouse link autocomplete
   const candidateSpouseMembers = useMemo(() => {
@@ -157,6 +257,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setParentId(memberToEdit.parentId || null);
       setMotherId(memberToEdit.motherId || null);
       setMotherName(memberToEdit.motherName || '');
+      setIsMotherNotInSystem(!memberToEdit.motherId && Boolean(memberToEdit.motherName && memberToEdit.motherName.trim()));
       
       // Load linked spouseIds (chỉ giữ thành viên còn tồn tại)
       const direct = memberToEdit.spouseIds || [];
@@ -175,7 +276,8 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setFullName('');
       setGender('male');
       setGeneration(parentToAssign.generation + 1);
-      setBranch(parentToAssign.branch || 'Chi Trưởng');
+      // D) Khi parentToAssign là nữ: prefill parentId = mẹ, generation +1, gợi ý branch Chi Ngoại nếu đúng quy ước app
+      setBranch(parentToAssign.gender === 'female' ? 'Chi Ngoại' : (parentToAssign.branch || 'Chi Trưởng'));
       setOrderInFamily(String(existingChildren.length + 1));
       setTitle('');
       setBirthYear(new Date().getFullYear().toString());
@@ -184,16 +286,18 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setLunarDeathDate('');
       setParentId(parentToAssign.id);
 
-      // Tự động gán mẹ nếu cha đã có phối ngẫu hợp lệ trong hệ thống
+      // Tự động gán mẹ / phối ngẫu nếu có
       const pSpouseIds = (parentToAssign.spouseIds || []).filter(id => allMembers.some(m => m.id === id));
       if (pSpouseIds.length > 0) {
         const firstMId = pSpouseIds[0];
         setMotherId(firstMId);
         const motherMem = allMembers.find(m => m.id === firstMId);
         setMotherName(motherMem?.fullName || parentToAssign.spouse || '');
+        setIsMotherNotInSystem(false);
       } else {
         setMotherId(null);
         setMotherName(parentToAssign.spouse || (parentToAssign.spouseList?.[0]?.name) || '');
+        setIsMotherNotInSystem(Boolean(parentToAssign.spouse || parentToAssign.spouseList?.[0]?.name));
       }
 
       setSelectedSpouseIds([]);
@@ -218,6 +322,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setParentId(null);
       setMotherId(null);
       setMotherName('');
+      setIsMotherNotInSystem(false);
       setSelectedSpouseIds([]);
       setPhone('');
       setAddress('');
@@ -227,6 +332,11 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       setAchievements('');
       setAvatarUrl('');
     }
+    setParentSearchTerm('');
+    setParentBranchFilter('all');
+    setParentGenFilter('all');
+    setMotherSearchTerm('');
+    setIsMotherDropdownOpen(false);
     setSpouseSearchTerm('');
     setIsSpouseDropdownOpen(false);
     setAvatarInputMode('upload');
@@ -565,69 +675,139 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             </div>
           </div>
 
-          {/* Row 3: Parent Selection */}
-          <div>
-            <label className="block text-stone-700 font-bold mb-1">Thân phụ (Bố đẻ trong họ):</label>
+          {/* Row 3: Parent Selection (Người nối nhánh trên cây parentId) */}
+          <div className="space-y-2 p-3.5 rounded-2xl bg-amber-50/40 border border-amber-200/80 shadow-2xs">
+            <div className="flex items-center justify-between flex-wrap gap-1">
+              <label className="block text-stone-900 font-bold text-xs sm:text-sm">
+                Người nối nhánh trên cây (parentId):
+              </label>
+              <span className="text-[10.5px] text-amber-800 font-semibold bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-300/60">
+                Nam và Nữ dòng họ
+              </span>
+            </div>
+            <p className="text-[11px] text-stone-500 leading-normal">
+              * Con sẽ hiện dưới người này trên cây phả hệ; có thể là bố họ Lê hoặc mẹ Chi Ngoại.
+            </p>
+
+            {/* Compact search and filters for parent */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-0.5">
+              <div className="relative sm:col-span-1">
+                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={parentSearchTerm}
+                  onChange={(e) => setParentSearchTerm(e.target.value)}
+                  placeholder="Tìm tên người nối nhánh..."
+                  className="w-full pl-7 pr-6 py-1.5 text-xs rounded-lg bg-white border border-stone-300 text-stone-900 placeholder:text-stone-400 focus:outline-none focus:border-amber-600 shadow-2xs font-medium"
+                />
+                {parentSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setParentSearchTerm('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <select
+                  value={parentBranchFilter}
+                  onChange={(e) => setParentBranchFilter(e.target.value)}
+                  className="w-full px-2 py-1.5 text-xs rounded-lg bg-white border border-stone-300 text-stone-800 focus:outline-none focus:border-amber-600 shadow-2xs font-medium cursor-pointer"
+                >
+                  <option value="all">Tất cả Chi phái</option>
+                  <option value="Chi Trưởng">Chi Trưởng</option>
+                  <option value="Chi Hai">Chi Hai</option>
+                  <option value="Chi Ba">Chi Ba</option>
+                  <option value="Chi Bốn">Chi Bốn</option>
+                  <option value="Chi Ngoại">Chi Ngoại</option>
+                </select>
+              </div>
+
+              <div>
+                <select
+                  value={parentGenFilter}
+                  onChange={(e) => setParentGenFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  className="w-full px-2 py-1.5 text-xs rounded-lg bg-white border border-stone-300 text-stone-800 focus:outline-none focus:border-amber-600 shadow-2xs font-medium cursor-pointer"
+                >
+                  <option value="all">Tất cả thế hệ (Đời)</option>
+                  {generationOptions.map(g => (
+                    <option key={g} value={g}>Đời {g} {g === 1 ? '(Thủy Tổ)' : ''}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Select Dropdown */}
             <select
               value={parentId || ''}
-              onChange={(e) => {
-                const newFId = e.target.value || null;
-                setParentId(newFId);
-                if (!newFId) {
-                  setMotherId(null);
-                  setMotherName('');
-                  return;
-                }
-                const fatherMem = allMembers.find(m => m.id === newFId);
-                if (!fatherMem) return;
-                const direct = fatherMem.spouseIds || [];
-                const reverse = allMembers.filter(m => m.id !== fatherMem.id && m.spouseIds?.includes(fatherMem.id)).map(m => m.id);
-                // Lọc bỏ các ID mồ côi không còn trong allMembers
-                const fSpouseList = Array.from(new Set([...direct, ...reverse])).filter(id => allMembers.some(m => m.id === id));
-
-                if (fSpouseList.length === 1) {
-                  setMotherId(fSpouseList[0]);
-                  const mMem = allMembers.find(m => m.id === fSpouseList[0]);
-                  setMotherName(mMem?.fullName || '');
-                } else if (fSpouseList.length >= 2) {
-                  if (!motherId || !fSpouseList.includes(motherId)) {
-                    setMotherId(fSpouseList[0]);
-                    const mMem = allMembers.find(m => m.id === fSpouseList[0]);
-                    setMotherName(mMem?.fullName || '');
-                  }
-                } else {
-                  setMotherId(null);
-                  setMotherName(fatherMem.spouse || '');
-                }
-              }}
-              className="w-full px-3 py-2.5 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none"
+              onChange={(e) => handleSelectParent(e.target.value || null)}
+              className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-stone-300 text-stone-900 focus:outline-none focus:border-amber-600 font-semibold shadow-2xs cursor-pointer"
             >
-              <option value="">Không có / Là Cụ Thủy Tổ khởi nghiệp</option>
-              {allMembers.filter(m => m.gender === 'male').map(m => (
+              <option value="">-- Không có / Thủy Tổ khởi nghiệp --</option>
+              {selectedParentMem && !sortedCandidateParents.some(m => m.id === selectedParentMem.id) && (
+                <option key={selectedParentMem.id} value={selectedParentMem.id}>
+                  {selectedParentMem.fullName} · Đời {selectedParentMem.generation} · {selectedParentMem.branch} · {selectedParentMem.gender === 'male' ? 'Nam ♂' : 'Nữ ♀'}
+                </option>
+              )}
+              {sortedCandidateParents.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.fullName} ({m.branch} - Đời {m.generation})
+                  {m.fullName} · Đời {m.generation} · {m.branch} · {m.gender === 'male' ? 'Nam ♂' : 'Nữ ♀'}
                 </option>
               ))}
             </select>
+
+            {/* Selection info & Quick Reset */}
+            {selectedParentMem ? (
+              <div className="p-2 rounded-xl bg-white border border-amber-300/80 shadow-2xs flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 font-bold text-[11px] ${selectedParentMem.gender === 'male' ? 'bg-sky-100 text-sky-800' : 'bg-rose-100 text-rose-800'}`}>
+                    {selectedParentMem.gender === 'male' ? '♂' : '♀'}
+                  </span>
+                  <div className="min-w-0">
+                    <span className="font-bold text-stone-900 truncate block">
+                      Đang nối nhánh dưới: {selectedParentMem.fullName}
+                    </span>
+                    <span className="text-[10.5px] text-stone-500 truncate block">
+                      Đời {selectedParentMem.generation} · {selectedParentMem.branch} · {selectedParentMem.gender === 'male' ? 'Nam (Bố họ Lê)' : 'Nữ (Mẹ Chi Ngoại)'}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSelectParent(null)}
+                  className="px-2 py-1 rounded-lg text-stone-400 hover:text-rose-700 hover:bg-rose-50 text-[11px] font-semibold transition-colors shrink-0 cursor-pointer"
+                  title="Bỏ chọn người nối nhánh (trở thành Thủy Tổ)"
+                >
+                  ✕ Bỏ chọn
+                </button>
+              </div>
+            ) : (
+              <div className="text-[11px] text-stone-500 italic">
+                * Chưa chọn người nối nhánh: Thành viên này sẽ là Thủy Tổ khởi lập nhánh độc lập trên cây.
+              </div>
+            )}
           </div>
 
-          {/* If Father has >= 1 linked spouses: Mother Selection Dropdown */}
-          {fatherSpouseIds.length >= 1 ? (
+          {/* Row 4: Thân mẫu / Người phối ngẫu còn lại */}
+          {parentSpouseIds.length >= 1 ? (
             <div className="p-3.5 rounded-2xl bg-rose-50/90 border border-rose-300 shadow-xs space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-stone-900 font-bold flex items-center gap-1.5 text-xs">
                   <Heart className="w-4 h-4 text-rose-600 fill-rose-500/20" />
                   <span>
-                    Chọn Thân mẫu ({fatherSpouseIds.length === 1 ? '1 phối ngẫu đã liên kết' : `${fatherSpouseIds.length} phối ngẫu đã liên kết`}):
+                    {currentParent?.gender === 'female' ? 'Chọn Phối ngẫu / Thân phụ' : 'Chọn Thân mẫu'} ({parentSpouseIds.length === 1 ? '1 phối ngẫu đã liên kết' : `${parentSpouseIds.length} phối ngẫu đã liên kết`}):
                   </span>
                 </label>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-200 text-rose-950 border border-rose-300">
-                  {fatherSpouseIds.length >= 2 ? 'Bắt buộc chọn' : 'Đã liên kết'}
+                  {parentSpouseIds.length >= 2 ? 'Bắt buộc chọn' : 'Đã liên kết'}
                 </span>
               </div>
 
               <select
-                value={motherId || (fatherSpouseIds.length === 1 ? fatherSpouseIds[0] : '')}
+                value={motherId || (parentSpouseIds.length === 1 ? parentSpouseIds[0] : '')}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val) {
@@ -641,10 +821,10 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 }}
                 className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-rose-300 text-stone-900 font-semibold focus:outline-none focus:border-rose-600 shadow-xs cursor-pointer"
               >
-                {fatherSpouseIds.length >= 2 && (
-                  <option value="">-- Vui lòng chọn Thân mẫu --</option>
+                {parentSpouseIds.length >= 2 && (
+                  <option value="">-- Vui lòng chọn phối ngẫu / thân mẫu --</option>
                 )}
-                {fatherSpouseIds.map((sId, sIdx) => {
+                {parentSpouseIds.map((sId, sIdx) => {
                   const sMem = allMembers.find(m => m.id === sId);
                   // Không bao giờ hiện raw UUID làm nhãn; nếu thiếu hồ sơ thì bỏ qua
                   if (!sMem) return null;
@@ -656,33 +836,173 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
                 })}
               </select>
 
-              {(motherId || fatherSpouseIds[0]) ? (
+              {(motherId || parentSpouseIds[0]) ? (
                 <div className="text-[11px] text-rose-800 font-semibold flex items-center gap-1">
-                  <span>Đã chọn Thân mẫu:</span>
+                  <span>Đã chọn:</span>
                   <strong className="text-rose-950 underline underline-offset-2">
-                    {allMembers.find(m => m.id === (motherId || fatherSpouseIds[0]))?.fullName || 
+                    {allMembers.find(m => m.id === (motherId || parentSpouseIds[0]))?.fullName || 
                       (motherName && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(motherName.trim()) ? motherName : '(Chưa rõ)')}
                   </strong>
                 </div>
               ) : (
                 <div className="text-[10.5px] text-stone-500 italic">
-                  * Hãy chọn đúng người mẹ để cây gia phả nối nhánh con chính xác theo từng cặp cha - mẹ.
+                  * Hãy chọn đúng người để cây gia phả nối nhánh con chính xác theo từng cặp bố - mẹ.
                 </div>
               )}
             </div>
           ) : (
-            /* If Father has 0 linked spouses: Manual text input */
-            <div>
-              <label className="block text-stone-700 font-bold mb-1">
-                Thân mẫu (Mẹ đẻ - nhập chữ nếu chưa tạo hồ sơ trong hệ thống):
-              </label>
-              <input
-                type="text"
-                value={motherName}
-                onChange={(e) => setMotherName(e.target.value)}
-                placeholder="Ví dụ: Bà Hoàng Thị Minh Châu"
-                className="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-300 text-stone-900 focus:outline-none focus:border-amber-600 font-medium"
-              />
+            /* If parent has 0 linked spouses: Prioritize searchable member from system, or manual text if ticked */
+            <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/90 shadow-2xs space-y-2.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <label className="text-stone-900 font-bold flex items-center gap-1.5 text-xs">
+                  <Heart className="w-4 h-4 text-rose-600 fill-rose-500/20" />
+                  <span>
+                    {currentParent?.gender === 'female' ? 'Thân phụ / Người phối ngẫu còn lại:' : 'Thân mẫu / Người phối ngẫu còn lại:'}
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-1.5 text-[11px] text-stone-700 cursor-pointer select-none bg-white/80 px-2 py-0.5 rounded-md border border-rose-200">
+                  <input
+                    type="checkbox"
+                    checked={isMotherNotInSystem}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsMotherNotInSystem(checked);
+                      if (checked) {
+                        setMotherId(null);
+                        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(motherName.trim())) {
+                          setMotherName('');
+                        }
+                      } else {
+                        setMotherId(null);
+                        setMotherName('');
+                      }
+                    }}
+                    className="rounded text-amber-700 focus:ring-amber-600 border-stone-300 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span className="font-semibold text-rose-900">Chưa có hồ sơ trong hệ thống</span>
+                </label>
+              </div>
+
+              {isMotherNotInSystem ? (
+                <div>
+                  <input
+                    type="text"
+                    value={motherName}
+                    onChange={(e) => setMotherName(e.target.value)}
+                    placeholder={currentParent?.gender === 'female' ? "Ví dụ: Ông Nguyễn Văn B (chồng bà Lê Thị C)..." : "Ví dụ: Bà Hoàng Thị Minh Châu..."}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-white border border-rose-300 text-stone-900 focus:outline-none focus:border-rose-600 font-semibold shadow-2xs"
+                  />
+                  <p className="text-[10.5px] text-stone-500 italic mt-1">
+                    * Nhập họ tên dạng chữ đối với thân mẫu / phối ngẫu chưa tạo hồ sơ trong cây phả hệ.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {selectedMotherMem ? (
+                    <div className="p-2.5 rounded-xl bg-white border border-rose-300 shadow-2xs flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${selectedMotherMem.gender === 'male' ? 'bg-sky-100 text-sky-800' : 'bg-rose-100 text-rose-800'}`}>
+                          {selectedMotherMem.gender === 'male' ? '♂' : '♀'}
+                        </div>
+                        <div className="min-w-0">
+                          <span className="font-bold text-stone-900 text-xs truncate block">{selectedMotherMem.fullName}</span>
+                          <span className="text-[10.5px] text-stone-500 truncate block">
+                            Đời {selectedMotherMem.generation} · {selectedMotherMem.branch} {selectedMotherMem.birthYear ? `· Sinh ${selectedMotherMem.birthYear}` : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMotherId(null);
+                          setMotherName('');
+                        }}
+                        className="px-2 py-1 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors text-xs font-semibold cursor-pointer shrink-0"
+                        title="Đổi hoặc bỏ chọn"
+                      >
+                        ✕ Bỏ chọn
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={motherSearchTerm}
+                          onChange={(e) => {
+                            setMotherSearchTerm(e.target.value);
+                            setIsMotherDropdownOpen(true);
+                          }}
+                          onFocus={() => setIsMotherDropdownOpen(true)}
+                          placeholder="Tìm và chọn thành viên trong hệ thống làm thân mẫu / người còn lại..."
+                          className="w-full pl-8 pr-8 py-2 text-xs rounded-xl bg-white border border-rose-300 text-stone-900 placeholder:text-stone-400 focus:outline-none focus:border-rose-600 shadow-2xs font-medium"
+                        />
+                        {motherSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => setMotherSearchTerm('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 text-xs cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {isMotherDropdownOpen && (
+                        <div className="absolute z-20 left-0 right-0 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-rose-300 shadow-xl p-1 space-y-1">
+                          <div className="px-2 py-1 text-[10px] font-bold text-stone-500 uppercase tracking-wider flex justify-between items-center border-b border-stone-100 bg-stone-50 rounded-t-lg">
+                            <span>Gợi ý ({candidateMotherMembers.length} thành viên)</span>
+                            <button 
+                              type="button" 
+                              onClick={() => setIsMotherDropdownOpen(false)}
+                              className="text-stone-400 hover:text-stone-700 text-xs cursor-pointer font-bold"
+                            >
+                              Đóng ✕
+                            </button>
+                          </div>
+
+                          {candidateMotherMembers.length === 0 ? (
+                            <div className="p-3 text-center text-xs text-stone-500">
+                              Không tìm thấy thành viên phù hợp
+                            </div>
+                          ) : (
+                            candidateMotherMembers.slice(0, 10).map(cand => (
+                              <button
+                                key={cand.id}
+                                type="button"
+                                onClick={() => {
+                                  setMotherId(cand.id);
+                                  setMotherName(cand.fullName);
+                                  setMotherSearchTerm('');
+                                  setIsMotherDropdownOpen(false);
+                                }}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-rose-50 flex items-center justify-between gap-2 group transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-[10px] ${cand.gender === 'male' ? 'bg-sky-100 text-sky-800' : 'bg-rose-100 text-rose-800'}`}>
+                                    {cand.gender === 'male' ? '♂' : '♀'}
+                                  </span>
+                                  <span className="font-semibold text-stone-900 text-xs truncate group-hover:text-rose-900">
+                                    {cand.fullName}
+                                  </span>
+                                  <span className="text-[11px] text-stone-500">
+                                    (Đời {cand.generation} · {cand.branch})
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                  Chọn
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
