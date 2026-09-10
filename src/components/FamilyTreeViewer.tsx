@@ -23,7 +23,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { ClanMember, ClanInfo, UserProfile, Role } from '../types';
-import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder } from '../utils/genealogyUtils';
+import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder, compareMembersForList } from '../utils/genealogyUtils';
 import { MemberListCard } from './MemberListCard';
 
 interface FamilyTreeViewerProps {
@@ -289,15 +289,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       if (!groups[m.generation]) groups[m.generation] = [];
       groups[m.generation].push(m);
     });
-    // Sort members in each generation by order_in_family ascending, fallback to id
+    // Sort members in each generation using compareMembersForList (branch rank -> orderInFamily -> fullName)
     Object.keys(groups).forEach((gKey) => {
       const g = Number(gKey);
-      groups[g].sort((a, b) => {
-        const aOrder = getMemberOrder(a);
-        const bOrder = getMemberOrder(b);
-        if (aOrder !== bOrder) return aOrder - bOrder;
-        return a.id.localeCompare(b.id);
-      });
+      groups[g].sort(compareMembersForList);
     });
     return groups;
   }, [members]);

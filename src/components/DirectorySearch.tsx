@@ -23,7 +23,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { ClanMember, ClanInfo, Gender, UserProfile, Role } from '../types';
-import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder } from '../utils/genealogyUtils';
+import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder, compareMembersForList } from '../utils/genealogyUtils';
 import { MemberListCard } from './MemberListCard';
 
 interface DirectorySearchProps {
@@ -51,6 +51,8 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   const [genFilter, setGenFilter] = useState<number | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'alive' | 'deceased'>('all');
   const [locationFilter, setLocationFilter] = useState('all');
+  // Sắp xếp: Mặc định "Theo đời & chi", tùy chọn "Theo tên A-Z"
+  const [sortBy, setSortBy] = useState<'generation_branch' | 'name_asc'>('generation_branch');
 
   // Trạng thái mở rộng / thu gọn thanh tìm kiếm và bộ lọc (mặc định mở đầy đủ)
   const [filtersExpanded, setFiltersExpanded] = useState(true);
@@ -87,7 +89,8 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
     branchFilter !== 'all' ||
     genFilter !== 'all' ||
     statusFilter !== 'all' ||
-    locationFilter !== 'all'
+    locationFilter !== 'all' ||
+    sortBy !== 'generation_branch'
   );
 
   useEffect(() => {
@@ -228,19 +231,18 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
       return true;
     });
 
-    // Sort: Generation ascending -> Order in family ascending -> ID alphabetical
-    return list.sort((a, b) => {
-      if (a.generation !== b.generation) {
-        return a.generation - b.generation;
-      }
-      const aOrder = getMemberOrder(a);
-      const bOrder = getMemberOrder(b);
-      if (aOrder !== bOrder) {
-        return aOrder - bOrder;
-      }
-      return a.id.localeCompare(b.id);
-    });
-  }, [members, searchTerm, genderFilter, branchFilter, genFilter, statusFilter, locationFilter]);
+    // Sắp xếp danh sách thành viên:
+    if (sortBy === 'name_asc') {
+      return list.sort((a, b) => {
+        const nameComp = (a.fullName || '').trim().localeCompare((b.fullName || '').trim(), 'vi');
+        if (nameComp !== 0) return nameComp;
+        return compareMembersForList(a, b);
+      });
+    }
+
+    // Mặc định: Sắp xếp theo đời & chi phái chuẩn phả hệ họ tộc
+    return list.sort(compareMembersForList);
+  }, [members, searchTerm, genderFilter, branchFilter, genFilter, statusFilter, locationFilter, sortBy]);
 
   const exportCSV = () => {
     const headers = ["Họ và Tên", "Giới Tính", "Đời Thứ", "Chi Nhánh", "Tuổi / Niên Đại", "Tình Trạng", "Số Điện Thoại", "Địa Chỉ", "Nghề Nghiệp"];
@@ -423,6 +425,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                       setGenFilter('all');
                       setStatusFilter('all');
                       setLocationFilter('all');
+                      setSortBy('generation_branch');
                     }}
                     className="px-2 py-1 text-xs text-amber-800 hover:text-amber-900 font-semibold hover:underline hidden sm:block cursor-pointer"
                   >
@@ -480,7 +483,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
               </div>
 
               {/* Quick Filter Row */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-2 text-xs">
                 
                 {/* Quick Gender Filter (Tất cả, Nam ♂, Nữ ♀) */}
                 <div>
@@ -577,12 +580,30 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                   </select>
                 </div>
 
+                {/* Sort Order Selector (Mặc định: Theo đời & chi | Theo tên A-Z) */}
+                <div>
+                  <label className="block text-stone-600 font-semibold mb-1">Sắp xếp:</label>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as 'generation_branch' | 'name_asc')}
+                    className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none focus:border-amber-600 font-medium cursor-pointer"
+                  >
+                    <option value="generation_branch">Theo đời & chi</option>
+                    <option value="name_asc">Theo tên A-Z</option>
+                  </select>
+                </div>
+
               </div>
 
               {/* Result Count, Clear Filters and Collapse */}
               <div className="flex items-center justify-between pt-2 border-t border-stone-100 text-xs text-stone-600">
                 <div className="flex items-center gap-2">
                   <span>Tìm thấy <strong>{filteredMembers.length}</strong> kết quả phù hợp</span>
+                  {sortBy === 'name_asc' && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-semibold text-[11px]">
+                      Sắp xếp tên A-Z
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   {hasActiveFilters && (
@@ -594,6 +615,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                         setGenFilter('all');
                         setStatusFilter('all');
                         setLocationFilter('all');
+                        setSortBy('generation_branch');
                       }}
                       className="text-amber-800 font-semibold hover:underline cursor-pointer"
                     >

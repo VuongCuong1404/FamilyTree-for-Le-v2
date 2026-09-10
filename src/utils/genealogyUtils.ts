@@ -191,6 +191,102 @@ export function getMemberOrder(m?: ClanMember | null): number {
 }
 
 /**
+ * Bảng thứ tự ưu tiên sắp xếp Chi phái theo truyền thống gia phả họ tộc:
+ * - Thủy Tổ / Toàn Tộc (Đời 1 / Gốc họ): rank 0
+ * - Chi Trưởng (Chi 1): rank 1
+ * - Chi Hai (Chi 2): rank 2
+ * - Chi Ba (Chi 3): rank 3
+ * - Chi Bốn (Chi 4): rank 4
+ * - Chi Năm (5) -> Chi Mười (10)
+ * - Chi Ngoại: rank 900 (theo truyền thống phân nhánh ngoại tộc / con gái xuất giá)
+ */
+export const BRANCH_SORT_ORDER: Record<string, number> = {
+  'Thủy Tổ': 0,
+  'Toàn Tộc': 0,
+  'Chi Trưởng': 1,
+  'Chi Hai': 2,
+  'Chi Ba': 3,
+  'Chi Bốn': 4,
+  'Chi Năm': 5,
+  'Chi Sáu': 6,
+  'Chi Bảy': 7,
+  'Chi Tám': 8,
+  'Chi Chín': 9,
+  'Chi Mười': 10,
+  'Chi Ngoại': 900,
+};
+
+/**
+ * Quy ước xếp hạng Chi phái:
+ * - Khớp trong BRANCH_SORT_ORDER: lấy thứ tự tương ứng (Chi Trưởng = 1, Chi Hai = 2, ...)
+ * - Nếu tên chi chứa chữ "ngoại" (ví dụ "Ngoại tộc", "Chi Ngoại"): rank 900
+ * - Chi nội khác (chưa chuẩn hóa hoặc không khớp): rank 500 (sau các chi nội đã biết 1-10, trước Chi Ngoại)
+ * - Không có thông tin / rỗng: rank 950 (cuối danh sách)
+ */
+export function getBranchRank(branch?: string | null): number {
+  if (!branch || !branch.trim()) return 950;
+  const trimmed = branch.trim();
+  if (BRANCH_SORT_ORDER[trimmed] !== undefined) {
+    return BRANCH_SORT_ORDER[trimmed];
+  }
+  if (trimmed.toLowerCase().includes('ngoại')) {
+    return 900;
+  }
+  // Chi nội khác không nằm trong danh sách chuẩn: xếp sau chi nội đã biết (1-10), trước chi ngoại (900)
+  return 500;
+}
+
+/**
+ * So sánh và sắp xếp danh sách thành viên chuẩn theo phả hệ họ tộc:
+ * 1. Đời (generation) tăng dần (ASC)
+ * 2. Chi phái (branch rank): Thủy Tổ -> Chi Trưởng -> Chi Hai -> Chi Ba -> Chi Bốn -> Chi nội khác -> Chi Ngoại
+ * 3. Thứ bậc trong gia đình (orderInFamily) tăng dần (ASC), nếu thiếu/chưa rõ coi như 999999
+ * 4. Họ và tên sắp xếp theo thứ tự từ điển tiếng Việt (localeCompare 'vi')
+ * 5. ID duy nhất để đảm bảo kết quả ổn định tuyệt đối (deterministic)
+ */
+export function compareMembersForList(
+  a: Pick<ClanMember, 'generation' | 'branch' | 'fullName' | 'id'> & { orderInFamily?: number | null; order_in_family?: number | null },
+  b: Pick<ClanMember, 'generation' | 'branch' | 'fullName' | 'id'> & { orderInFamily?: number | null; order_in_family?: number | null }
+): number {
+  // 1. Generation ASC
+  const genA = Number(a.generation) || 0;
+  const genB = Number(b.generation) || 0;
+  if (genA !== genB) {
+    return genA - genB;
+  }
+
+  // 2. Branch rank
+  const rankA = getBranchRank(a.branch);
+  const rankB = getBranchRank(b.branch);
+  if (rankA !== rankB) {
+    return rankA - rankB;
+  }
+  // Nếu cùng rank chi phái nhưng khác tên chi, gom nhóm theo tên chi bằng tiếng Việt
+  if (a.branch && b.branch && a.branch !== b.branch) {
+    const branchComp = a.branch.localeCompare(b.branch, 'vi');
+    if (branchComp !== 0) return branchComp;
+  }
+
+  // 3. Order in family ASC (thiếu / chưa nhập = 999999)
+  const aOrder = getMemberOrder(a as ClanMember);
+  const bOrder = getMemberOrder(b as ClanMember);
+  if (aOrder !== bOrder) {
+    return aOrder - bOrder;
+  }
+
+  // 4. Full name ASC theo tiếng Việt
+  const nameA = a.fullName ? a.fullName.trim() : '';
+  const nameB = b.fullName ? b.fullName.trim() : '';
+  const nameComp = nameA.localeCompare(nameB, 'vi');
+  if (nameComp !== 0) {
+    return nameComp;
+  }
+
+  // 5. Tie-breaker theo id
+  return (a.id || '').localeCompare(b.id || '');
+}
+
+/**
  * Compress an image File into a lightweight Base64 JPEG data URL using HTML5 Canvas
  */
 export function compressImageFile(
