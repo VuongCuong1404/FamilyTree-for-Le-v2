@@ -167,9 +167,10 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
 
         {/* Main Title & Slogan */}
         <div className="max-w-3xl mx-auto space-y-2 relative z-10">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-950/80 border border-amber-600/50 text-amber-300 text-xs font-semibold mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Hôm nay: {todayLunar.formattedFullLunar} ({todayLunar.solarDateString})</span>
+          {/* Badge ngày hiển thị: Dương lịch trước, Âm lịch sau (mobile-friendly) */}
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-950/80 border border-amber-600/50 text-amber-300 text-xs font-semibold mb-2 max-w-full text-center">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>Hôm nay: {todayLunar.solarDateString} · Âm lịch: {todayLunar.formattedFullLunar}</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold font-serif-clan tracking-wide text-amber-100 drop-shadow-md">

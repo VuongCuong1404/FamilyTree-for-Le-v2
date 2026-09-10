@@ -7,12 +7,60 @@ export interface LunarDateInfo {
   lunarMonthName: string;
   lunarYearName: string; // e.g. "Bính Ngọ"
   formattedLunar: string; // e.g. "10/03 Âm lịch"
-  formattedFullLunar: string; // e.g. "Ngày 10 tháng 3 năm Bính Ngọ (Âm lịch)"
+  formattedFullLunar: string; // e.g. "ngày 29 tháng 7 năm Bính Ngọ"
   isLeapMonth: boolean;
-  solarDateString: string; // e.g. "26/04/2026"
+  solarDateString: string; // e.g. "10/09/2026"
   solarDay: number;
   solarMonth: number;
   solarYear: number;
+}
+
+// Bảng ánh xạ 10 Thiên can sang tiếng Việt
+export const CAN_VIET_MAP: Record<string, string> = {
+  '甲': 'Giáp',
+  '乙': 'Ất',
+  '丙': 'Bính',
+  '丁': 'Đinh',
+  '戊': 'Mậu',
+  '己': 'Kỷ',
+  '庚': 'Canh',
+  '辛': 'Tân',
+  '壬': 'Nhâm',
+  '癸': 'Quý',
+};
+
+// Bảng ánh xạ 12 Địa chi sang tiếng Việt
+export const CHI_VIET_MAP: Record<string, string> = {
+  '子': 'Tý',
+  '丑': 'Sửu',
+  '寅': 'Dần',
+  '卯': 'Mão',
+  '辰': 'Thìn',
+  '巳': 'Tỵ',
+  '午': 'Ngọ',
+  '未': 'Mùi',
+  '申': 'Thân',
+  '酉': 'Dậu',
+  '戌': 'Tuất',
+  '亥': 'Hợi',
+};
+
+// Mảng 10 Can và 12 Chi tiếng Việt chuẩn để tính toán theo năm
+export const CAN_LIST = ['Giáp', 'Ất', 'Bính', 'Đinh', 'Mậu', 'Kỷ', 'Canh', 'Tân', 'Nhâm', 'Quý'] as const;
+export const CHI_LIST = ['Tý', 'Sửu', 'Dần', 'Mão', 'Thìn', 'Tỵ', 'Ngọ', 'Mùi', 'Thân', 'Dậu', 'Tuất', 'Hợi'] as const;
+
+/**
+ * Chuyển Can Chi năm Âm lịch sang tiếng Việt thuần túy (ví dụ: "Bính Ngọ"),
+ * loại bỏ hoàn toàn các ký tự chữ Hán (午年, 丙午, 马...).
+ */
+export function getVietnameseYearCanChi(lunarYear: number, rawGan?: string, rawZhi?: string): string {
+  if (rawGan && rawZhi && CAN_VIET_MAP[rawGan] && CHI_VIET_MAP[rawZhi]) {
+    return `${CAN_VIET_MAP[rawGan]} ${CHI_VIET_MAP[rawZhi]}`;
+  }
+  // Tính theo chu kỳ Can Chi năm âm lịch
+  const canIndex = ((lunarYear + 6) % 10 + 10) % 10;
+  const chiIndex = ((lunarYear + 8) % 12 + 12) % 12;
+  return `${CAN_LIST[canIndex]} ${CHI_LIST[chiIndex]}`;
 }
 
 /**
@@ -28,9 +76,10 @@ export function convertSolarToLunar(solarDate: Date = new Date()): LunarDateInfo
     const lunarYear = lunar.getYear();
     const isLeapMonth = lunar.getMonth() < 0;
 
-    const lunarYearName = `${lunar.getYearInGanZhi()} (${lunar.getYearShengXiao()})`;
+    // Tên năm Can Chi tiếng Việt thuần, không dùng chữ Hán
+    const lunarYearName = getVietnameseYearCanChi(lunarYear, lunar.getYearGan(), lunar.getYearZhi());
     const formattedLunar = `${String(lunarDay).padStart(2, '0')}/${String(lunarMonth).padStart(2, '0')} Âm lịch`;
-    const formattedFullLunar = `Ngày ${lunarDay} tháng ${lunarMonth}${isLeapMonth ? ' (Nhuận)' : ''} năm ${lunar.getYearInGanZhi()}`;
+    const formattedFullLunar = `ngày ${lunarDay} tháng ${lunarMonth}${isLeapMonth ? ' (nhuận)' : ''} năm ${lunarYearName}`;
 
     const solarDay = solar.getDay();
     const solarMonth = solar.getMonth();
@@ -53,7 +102,7 @@ export function convertSolarToLunar(solarDate: Date = new Date()): LunarDateInfo
     };
   } catch (err) {
     console.error('Error converting solar to lunar:', err);
-    // Safe fallback
+    // Safe fallback thuần Việt
     return {
       lunarDay: 10,
       lunarMonth: 3,
@@ -61,7 +110,7 @@ export function convertSolarToLunar(solarDate: Date = new Date()): LunarDateInfo
       lunarMonthName: 'Tháng 3',
       lunarYearName: 'Bính Ngọ',
       formattedLunar: '10/03 Âm lịch',
-      formattedFullLunar: 'Ngày 10 tháng 03 năm Bính Ngọ (Âm lịch)',
+      formattedFullLunar: 'ngày 10 tháng 3 năm Bính Ngọ',
       isLeapMonth: false,
       solarDateString: '26/04/2026',
       solarDay: 26,
@@ -150,11 +199,12 @@ export function getUpcomingAnniversaryDate(lunarDateStr: string): {
 
   if (thisYearResult.daysRemaining >= 0) {
     const lunar = Lunar.fromYmd(currentYear, parsed.month, parsed.day);
+    const canChi = getVietnameseYearCanChi(currentYear, lunar.getYearGan(), lunar.getYearZhi());
     return {
       solarDateStr: thisYearResult.formattedSolar,
       daysRemaining: thisYearResult.daysRemaining,
       isPastThisYear: false,
-      canChiYear: `${lunar.getYearInGanZhi()} ${currentYear}`,
+      canChiYear: `${canChi} ${currentYear}`,
     };
   }
 
@@ -162,11 +212,12 @@ export function getUpcomingAnniversaryDate(lunarDateStr: string): {
   const nextYear = currentYear + 1;
   const nextYearResult = convertLunarToSolar(nextYear, parsed.month, parsed.day);
   const nextLunar = Lunar.fromYmd(nextYear, parsed.month, parsed.day);
+  const nextCanChi = getVietnameseYearCanChi(nextYear, nextLunar.getYearGan(), nextLunar.getYearZhi());
 
   return {
     solarDateStr: nextYearResult.formattedSolar,
     daysRemaining: nextYearResult.daysRemaining,
     isPastThisYear: true,
-    canChiYear: `${nextLunar.getYearInGanZhi()} ${nextYear}`,
+    canChiYear: `${nextCanChi} ${nextYear}`,
   };
 }
