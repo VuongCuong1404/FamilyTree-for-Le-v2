@@ -23,7 +23,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { ClanMember, ClanInfo, UserProfile, Role } from '../types';
-import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder } from '../utils/genealogyUtils';
+import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder, removeVietnameseAccents } from '../utils/genealogyUtils';
 
 interface FamilyTreeViewerProps {
   members: ClanMember[];
@@ -272,15 +272,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   const stats = useMemo(() => {
     return calculateClanStats(members);
   }, [members]);
-
-  // Helper loại bỏ dấu tiếng Việt để tìm kiếm không dấu / có dấu đều khớp chính xác
-  const removeVietnameseAccents = (str: string) => {
-    return str
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/đ/g, 'd')
-      .replace(/Đ/g, 'D');
-  };
 
   // Check matching search
   const isMatchSearch = (m: ClanMember | undefined | null) => {

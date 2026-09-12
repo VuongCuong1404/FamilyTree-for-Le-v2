@@ -30,7 +30,8 @@ import {
   calculateClanStats, 
   getMemberOrder, 
   compareMembersForList,
-  getGenerationRomanTitle
+  getGenerationRomanTitle,
+  removeVietnameseAccents
 } from '../utils/genealogyUtils';
 import { MemberListCard } from './MemberListCard';
 
@@ -292,13 +293,27 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
       // Search term query
       if (debouncedSearch.trim()) {
         const q = debouncedSearch.toLowerCase().trim();
-        const matchName = m.fullName.toLowerCase().includes(q);
+        const qUnaccent = removeVietnameseAccents(q);
+
+        const checkText = (text?: string | null) => {
+          if (!text) return false;
+          const lower = text.toLowerCase();
+          return lower.includes(q) || removeVietnameseAccents(lower).includes(qUnaccent);
+        };
+
+        const matchName = checkText(m.fullName);
         const matchPhone = m.phone ? m.phone.includes(q) : false;
-        const matchSpouse = m.spouse ? m.spouse.toLowerCase().includes(q) : false;
-        const matchAddr = m.address ? m.address.toLowerCase().includes(q) : false;
-        const matchJob = m.occupation ? m.occupation.toLowerCase().includes(q) : false;
-        const matchTitle = m.title ? m.title.toLowerCase().includes(q) : false;
-        if (!matchName && !matchPhone && !matchSpouse && !matchAddr && !matchJob && !matchTitle) {
+        const matchSpouse = checkText(m.spouse) || Boolean(m.spouseList && m.spouseList.some(s => checkText(s.name) || checkText(s.note)));
+        const matchSpouseIds = Boolean(m.spouseIds && m.spouseIds.some(sid => {
+          const sp = members.find(x => x.id === sid);
+          return checkText(sp?.fullName);
+        }));
+        const matchAddr = checkText(m.address);
+        const matchJob = checkText(m.occupation);
+        const matchTitle = checkText(m.title);
+        const matchBranch = checkText(m.branch);
+
+        if (!matchName && !matchPhone && !matchSpouse && !matchSpouseIds && !matchAddr && !matchJob && !matchTitle && !matchBranch) {
           return false;
         }
       }
