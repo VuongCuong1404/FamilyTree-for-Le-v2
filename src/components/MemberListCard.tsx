@@ -22,7 +22,7 @@ export interface MemberListCardProps {
   className?: string;
 }
 
-export const MemberListCard: React.FC<MemberListCardProps> = ({
+export const MemberListCard: React.FC<MemberListCardProps> = React.memo(({
   member,
   allMembers = [],
   showPhone = false,
@@ -59,6 +59,30 @@ export const MemberListCard: React.FC<MemberListCardProps> = ({
 
     return '';
   }, [member.spouseIds, member.spouseList, member.spouse, allMembers]);
+
+  // Xác định thân mẫu chuẩn qua giới tính thật (không phụ thuộc tên trường)
+  const motherText = useMemo(() => {
+    const linkedParent = member.parentId ? allMembers.find(m => m.id === member.parentId) : null;
+    const linkedMotherById = member.motherId ? allMembers.find(m => m.id === member.motherId) : null;
+
+    const father = linkedParent?.gender === 'male' ? linkedParent : (linkedMotherById?.gender === 'male' ? linkedMotherById : null);
+    const mother = linkedParent?.gender === 'female' ? linkedParent : (linkedMotherById?.gender === 'female' ? linkedMotherById : null);
+
+    if (mother?.fullName) {
+      return mother.fullName;
+    }
+    if (member.motherName) {
+      const trimmedMotherName = member.motherName.trim();
+      const fatherFullName = father?.fullName?.trim();
+      if (!fatherFullName || trimmedMotherName.toLowerCase() !== fatherFullName.toLowerCase()) {
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedMotherName)) {
+          return allMembers.find(m => m.id === trimmedMotherName)?.fullName || '';
+        }
+        return trimmedMotherName;
+      }
+    }
+    return '';
+  }, [member.parentId, member.motherId, member.motherName, allMembers]);
 
   // Xác định layout hiển thị (Danh bạ vs Danh sách theo đời)
   const isDirectory = variant === 'directory' || (variant === undefined && Boolean(showPhone || showOccupation));
@@ -167,6 +191,13 @@ export const MemberListCard: React.FC<MemberListCardProps> = ({
               </div>
             )}
 
+            {motherText && (
+              <div className="flex items-center gap-2 text-rose-800 text-xs">
+                <span className="font-semibold text-rose-600 shrink-0">Mẹ:</span>
+                <span className="truncate font-medium">{motherText}</span>
+              </div>
+            )}
+
             {showSpouse && spouseText && (
               <div className="flex items-center gap-2 text-stone-500">
                 <Heart className="w-3.5 h-3.5 text-rose-500 shrink-0" />
@@ -234,6 +265,13 @@ export const MemberListCard: React.FC<MemberListCardProps> = ({
             {ageInfo.formattedText}
           </div>
 
+          {motherText && (
+            <div className="text-xs text-rose-800 mt-1 truncate flex items-center gap-1">
+              <span className="font-semibold text-rose-600 shrink-0">Mẹ:</span>
+              <span className="truncate font-medium">{motherText}</span>
+            </div>
+          )}
+
           {showSpouse && spouseText && (
             <div className="text-xs text-stone-500 mt-1 truncate flex items-center gap-1">
               <Heart className="w-3 h-3 text-rose-500 shrink-0" />
@@ -252,6 +290,8 @@ export const MemberListCard: React.FC<MemberListCardProps> = ({
       </div>
     </div>
   );
-};
+});
+
+MemberListCard.displayName = 'MemberListCard';
 
 export default MemberListCard;

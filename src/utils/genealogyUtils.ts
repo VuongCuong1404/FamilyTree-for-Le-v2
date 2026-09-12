@@ -191,6 +191,30 @@ export function getMemberOrder(m?: ClanMember | null): number {
 }
 
 /**
+ * Chuyển số thứ tự thế hệ thành tiêu đề chữ số La Mã / chữ Hán Việt truyền thống
+ */
+export function getGenerationRomanTitle(genNum: number): string {
+  const romanMap: Record<number, string> = {
+    1: 'Nhất (I)',
+    2: 'Nhị (II)',
+    3: 'Tam (III)',
+    4: 'Tứ (IV)',
+    5: 'Ngũ (V)',
+    6: 'Lục (VI)',
+    7: 'Thất (VII)',
+    8: 'Bát (VIII)',
+    9: 'Cửu (IX)',
+    10: 'Thập (X)',
+    11: 'Mười Một (XI)',
+    12: 'Mười Hai (XII)',
+    13: 'Mười Ba (XIII)',
+    14: 'Mười Bốn (XIV)',
+    15: 'Mười Lăm (XV)',
+  };
+  return romanMap[genNum] || `${genNum}`;
+}
+
+/**
  * Bảng thứ tự ưu tiên sắp xếp Chi phái theo truyền thống gia phả họ tộc:
  * - Thủy Tổ / Toàn Tộc (Đời 1 / Gốc họ): rank 0
  * - Chi Trưởng (Chi 1): rank 1

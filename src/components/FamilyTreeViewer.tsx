@@ -23,8 +23,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { ClanMember, ClanInfo, UserProfile, Role } from '../types';
-import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder, compareMembersForList } from '../utils/genealogyUtils';
-import { MemberListCard } from './MemberListCard';
+import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder } from '../utils/genealogyUtils';
 
 interface FamilyTreeViewerProps {
   members: ClanMember[];
@@ -242,7 +241,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   const [selectedGenFilter, setSelectedGenFilter] = useState<number | 'all'>('all');
   const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [showSpouses, setShowSpouses] = useState<boolean>(true);
-  const [viewMode, setViewMode] = useState<'tree' | 'generation_list'>('tree');
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [isExportingJpg, setIsExportingJpg] = useState<boolean>(false);
   const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(() => {
@@ -281,21 +279,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<any>(null);
-
-  // Group members by Generation
-  const generationGroups = useMemo(() => {
-    const groups: { [gen: number]: ClanMember[] } = {};
-    members.forEach((m) => {
-      if (!groups[m.generation]) groups[m.generation] = [];
-      groups[m.generation].push(m);
-    });
-    // Sort members in each generation using compareMembersForList (branch rank -> orderInFamily -> fullName)
-    Object.keys(groups).forEach((gKey) => {
-      const g = Number(gKey);
-      groups[g].sort(compareMembersForList);
-    });
-    return groups;
-  }, [members]);
 
   // Branches list
   const branches = useMemo(() => {
@@ -492,7 +475,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
   // Initialize and update family-chart library
   useEffect(() => {
-    if (!chartContainerRef.current || viewMode !== 'tree') return;
+    if (!chartContainerRef.current) return;
 
     const container = chartContainerRef.current;
     container.innerHTML = ''; // Clean previous tree instances
@@ -531,7 +514,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         container.innerHTML = '';
       }
     };
-  }, [chartData, searchQuery, genderFilter, viewMode, maxGeneration]);
+  }, [chartData, searchQuery, genderFilter, maxGeneration]);
 
   // Zoom and tree position handlers powered by family-chart and D3 Zoom (Tắt animation để mở cây nhanh)
   const handleZoomIn = () => {
@@ -790,7 +773,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       setSelectedGenFilter('all');
       setSearchQuery('');
       setGenderFilter('all');
-      setViewMode('tree');
 
       // 2. Chờ React re-render và DOM tree cập nhật đầy đủ các thẻ
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -956,7 +938,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       setSelectedGenFilter('all');
       setSearchQuery('');
       setGenderFilter('all');
-      setViewMode('tree');
 
       // 2. Chờ React re-render và DOM tree cập nhật đầy đủ các thẻ
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -1119,32 +1100,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               >
                 <span>{isFilterExpanded ? '▲ Thu gọn bộ lọc' : '▼ Mở bộ lọc & Thống kê'}</span>
               </button>
-
-              {/* View Mode Switcher */}
-              <div className="bg-stone-900/90 rounded-xl p-1 flex items-center border border-amber-900/40 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('tree')}
-                  className={`px-2.5 sm:px-3 py-1.5 rounded-lg font-medium transition-all ${
-                    viewMode === 'tree'
-                      ? 'bg-amber-700 text-white font-bold shadow-sm'
-                      : 'text-stone-300 hover:text-amber-200'
-                  }`}
-                >
-                  Cây Phân Nhánh
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('generation_list')}
-                  className={`px-2.5 sm:px-3 py-1.5 rounded-lg font-medium transition-all ${
-                    viewMode === 'generation_list'
-                      ? 'bg-amber-700 text-white font-bold shadow-sm'
-                      : 'text-stone-300 hover:text-amber-200'
-                  }`}
-                >
-                  Danh Sách Theo Đời
-                </button>
-              </div>
 
               {/* PDF & JPG Export Buttons: ONLY shown when currentUserRole === 'admin' */}
               {isAdmin && (
@@ -1342,54 +1297,52 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 </label>
 
                 {/* Zoom & Fit Toolbar in Filter Bar */}
-                {viewMode === 'tree' && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={handleFitTree}
-                      className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 text-[11px] font-semibold cursor-pointer flex items-center gap-1"
-                      title="Thu nhỏ để xem toàn bộ cây trong 1 màn hình"
-                    >
-                      <Maximize2 className="w-3 h-3 text-amber-400" />
-                      <span>Xem toàn bộ</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCenterRoot}
-                      className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] cursor-pointer"
-                      title="Căn giữa về Cụ Thủy Tổ"
-                    >
-                      Về Thủy Tổ
-                    </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleFitTree}
+                    className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 text-[11px] font-semibold cursor-pointer flex items-center gap-1"
+                    title="Thu nhỏ để xem toàn bộ cây trong 1 màn hình"
+                  >
+                    <Maximize2 className="w-3 h-3 text-amber-400" />
+                    <span>Xem toàn bộ</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCenterRoot}
+                    className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] cursor-pointer"
+                    title="Căn giữa về Cụ Thủy Tổ"
+                  >
+                    Về Thủy Tổ
+                  </button>
 
-                    <span className="text-stone-600 mx-1">|</span>
+                  <span className="text-stone-600 mx-1">|</span>
 
-                    <button
-                      type="button"
-                      onClick={handleZoomIn}
-                      className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 cursor-pointer"
-                      title="Phóng to"
-                    >
-                      <ZoomIn className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleZoomOut}
-                      className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 cursor-pointer"
-                      title="Thu nhỏ"
-                    >
-                      <ZoomOut className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleFitTree}
-                      className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 cursor-pointer"
-                      title="Xem toàn bộ cây vừa màn hình"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={handleZoomIn}
+                    className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 cursor-pointer"
+                    title="Phóng to"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleZoomOut}
+                    className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 cursor-pointer"
+                    title="Thu nhỏ"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleFitTree}
+                    className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 cursor-pointer"
+                    title="Xem toàn bộ cây vừa màn hình"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
 
               </div>
             </div>
@@ -1401,127 +1354,71 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       {/* Main View Area */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         
-        {/* VIEW MODE 1: FAMILY-CHART D3 CANVAS (PINCH-TO-ZOOM, SMOOTH PAN, FOCAL ZOOM, FIT SCREEN) */}
-        {viewMode === 'tree' && (
-          <div className="w-full relative overflow-hidden bg-parchment rounded-3xl border-2 border-amber-800/30 shadow-xl min-h-[600px] h-[75vh] sm:h-[80vh]">
-            
-            {/* Subtle Watermark in background */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none select-none z-0">
-              <span className="font-serif-clan font-bold text-7xl sm:text-9xl text-amber-950 uppercase tracking-widest text-center">
-                {clanInfo.clanSurname} TỘC<br />GIA PHẢ
-              </span>
-            </div>
+        {/* FAMILY-CHART D3 CANVAS (PINCH-TO-ZOOM, SMOOTH PAN, FOCAL ZOOM, FIT SCREEN) */}
+        <div className="w-full relative overflow-hidden bg-parchment rounded-3xl border-2 border-amber-800/30 shadow-xl min-h-[600px] h-[75vh] sm:h-[80vh]">
+          
+          {/* Subtle Watermark in background */}
+          <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none select-none z-0">
+            <span className="font-serif-clan font-bold text-7xl sm:text-9xl text-amber-950 uppercase tracking-widest text-center">
+              {clanInfo.clanSurname} TỘC<br />GIA PHẢ
+            </span>
+          </div>
 
-            {/* Floating Gesture Helper Guide on Tree */}
-            {showGestureHint && (
-              <div className="absolute top-4 left-4 z-20 flex items-center gap-2 pointer-events-none transition-opacity duration-500">
-                <div className="bg-stone-900/85 backdrop-blur-xs text-amber-100 text-[11px] px-3 py-1.5 rounded-xl border border-amber-800/40 shadow-md flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                  <span className="font-medium">Chạm 2 ngón để zoom • Kéo chuột/ngón tay để di chuyển • Cuộn để phóng to</span>
-                </div>
+          {/* Floating Gesture Helper Guide on Tree */}
+          {showGestureHint && (
+            <div className="absolute top-4 left-4 z-20 flex items-center gap-2 pointer-events-none transition-opacity duration-500">
+              <div className="bg-stone-900/85 backdrop-blur-xs text-amber-100 text-[11px] px-3 py-1.5 rounded-xl border border-amber-800/40 shadow-md flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                <span className="font-medium">Chạm 2 ngón để zoom • Kéo chuột/ngón tay để di chuyển • Cuộn để phóng to</span>
               </div>
-            )}
-
-            {/* Floating on-canvas Zoom & Fit Controls (bottom-right) */}
-            <div className="absolute bottom-4 right-4 z-20 flex items-center gap-1.5 bg-stone-900/90 backdrop-blur-xs p-1.5 rounded-2xl border border-amber-800/50 shadow-xl text-amber-100">
-              <button
-                type="button"
-                onClick={handleZoomIn}
-                className="w-8 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center justify-center text-amber-200 cursor-pointer transition-colors"
-                title="Phóng to"
-              >
-                <ZoomIn className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleZoomOut}
-                className="w-8 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center justify-center text-amber-200 cursor-pointer transition-colors"
-                title="Thu nhỏ"
-              >
-                <ZoomOut className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleFitTree}
-                className="px-2.5 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center gap-1 text-[11px] font-bold text-amber-300 cursor-pointer transition-colors"
-                title="Thu nhỏ để xem toàn bộ cây trong 1 màn hình"
-              >
-                <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
-                <span>Xem toàn bộ</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleCenterRoot}
-                className="px-2 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center gap-1 text-[11px] font-medium text-stone-300 hover:text-white cursor-pointer transition-colors"
-                title="Căn về Cụ Thủy Tổ"
-              >
-                <span>Thủy Tổ</span>
-              </button>
             </div>
+          )}
 
-            {/* DOM Container for family-chart */}
-            <div 
-              id="familyTreeChartCont"
-              ref={chartContainerRef}
-              className="w-full h-full relative z-10 f3"
-              style={{ minHeight: '600px', height: '100%' }}
-            />
+          {/* Floating on-canvas Zoom & Fit Controls (bottom-right) */}
+          <div className="absolute bottom-4 right-4 z-20 flex items-center gap-1.5 bg-stone-900/90 backdrop-blur-xs p-1.5 rounded-2xl border border-amber-800/50 shadow-xl text-amber-100">
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              className="w-8 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center justify-center text-amber-200 cursor-pointer transition-colors"
+              title="Phóng to"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              className="w-8 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center justify-center text-amber-200 cursor-pointer transition-colors"
+              title="Thu nhỏ"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleFitTree}
+              className="px-2.5 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center gap-1 text-[11px] font-bold text-amber-300 cursor-pointer transition-colors"
+              title="Thu nhỏ để xem toàn bộ cây trong 1 màn hình"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>Xem toàn bộ</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleCenterRoot}
+              className="px-2 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center gap-1 text-[11px] font-medium text-stone-300 hover:text-white cursor-pointer transition-colors"
+              title="Căn về Cụ Thủy Tổ"
+            >
+              <span>Thủy Tổ</span>
+            </button>
           </div>
-        )}
 
-        {/* VIEW MODE 2: STRUCTURED GENERATION LIST */}
-        {viewMode === 'generation_list' && (
-          <div className="space-y-8">
-            {Object.keys(generationGroups).sort((a, b) => Number(a) - Number(b)).map((genKey) => {
-              const genNum = Number(genKey);
-              if (selectedGenFilter !== 'all' && genNum !== selectedGenFilter) return null;
-              
-              const list = generationGroups[genNum].filter(m => {
-                if (selectedBranch !== 'all' && m.branch !== selectedBranch) return false;
-                if (genderFilter !== 'all' && m.gender !== genderFilter) return false;
-                if (searchQuery.trim() && !isMatchSearch(m)) return false;
-                return true;
-              });
-
-              if (list.length === 0) return null;
-
-              const romanGen = getGenerationRomanTitle(genNum);
-
-              return (
-                <div key={genNum} className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 shadow-md">
-                  <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-6 border-b border-stone-100">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-amber-800 text-amber-100 flex items-center justify-center font-bold font-serif-clan text-base">
-                        {genNum}
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold font-serif-clan text-stone-900">
-                          Thế Hệ Thứ {romanGen}
-                        </h3>
-                        <p className="text-xs text-stone-500">
-                          Gồm {list.length} thành viên phù hợp trong thế hệ này
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {list.map((member) => (
-                      <MemberListCard
-                        key={member.id}
-                        member={member}
-                        allMembers={members}
-                        showSpouse={true}
-                        showPhone={false}
-                        onClick={() => onSelectMember(member)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+          {/* DOM Container for family-chart */}
+          <div 
+            id="familyTreeChartCont"
+            ref={chartContainerRef}
+            className="w-full h-full relative z-10 f3"
+            style={{ minHeight: '600px', height: '100%' }}
+          />
+        </div>
 
       </div>
     </div>

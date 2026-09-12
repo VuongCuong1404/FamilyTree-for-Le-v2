@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
   Search, 
   Phone, 
@@ -22,8 +22,16 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { ClanMember, ClanInfo, Gender, UserProfile, Role } from '../types';
-import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder, compareMembersForList } from '../utils/genealogyUtils';
+import { 
+  calculateAgeInfo, 
+  getGenderVisuals, 
+  calculateClanStats, 
+  getMemberOrder, 
+  compareMembersForList,
+  getGenerationRomanTitle
+} from '../utils/genealogyUtils';
 import { MemberListCard } from './MemberListCard';
 
 interface DirectorySearchProps {
@@ -36,6 +44,24 @@ interface DirectorySearchProps {
   onOpenAuth?: () => void;
 }
 
+// Định nghĩa kiểu hàng ảo (Virtual Item) để virtualize cả header đời và hàng thẻ thành viên
+type DirectoryVirtualItem =
+  | {
+      type: 'generation_header';
+      id: string;
+      genNum: number;
+      romanTitle: string;
+      count: number;
+      isCollapsed: boolean;
+    }
+  | {
+      type: 'member_row';
+      id: string;
+      members: ClanMember[];
+      variant: 'directory' | 'generation';
+      genNum?: number;
+    };
+
 export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   members,
   clanInfo,
@@ -45,7 +71,13 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   currentUserRole,
   onOpenAuth,
 }) => {
+  // Chế độ hiển thị: Mặc định 'by_generation' (Theo đời), tùy chọn 'flat' (Danh sách phẳng)
+  const [viewMode, setViewMode] = useState<'by_generation' | 'flat'>('by_generation');
+
+  // Input tìm kiếm thực tế & tìm kiếm đã debounce 250ms để tối ưu hiệu năng
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [branchFilter, setBranchFilter] = useState('all');
   const [genFilter, setGenFilter] = useState<number | 'all'>('all');
@@ -53,6 +85,9 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   const [locationFilter, setLocationFilter] = useState('all');
   // Sắp xếp: Mặc định "Theo đời & chi", tùy chọn "Theo tên A-Z"
   const [sortBy, setSortBy] = useState<'generation_branch' | 'name_asc'>('generation_branch');
+
+  // Trạng thái thu gọn/mở rộng từng thế hệ (đời) trong chế độ 'by_generation'
+  const [collapsedGens, setCollapsedGens] = useState<Set<number>>(new Set());
 
   // Trạng thái mở rộng / thu gọn thanh tìm kiếm và bộ lọc (mặc định mở đầy đủ)
   const [filtersExpanded, setFiltersExpanded] = useState(true);
@@ -66,6 +101,33 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   const stickyBarRef = useRef<HTMLDivElement>(null);
   const [stickyHeight, setStickyHeight] = useState(56);
   const [isStickyActive, setIsStickyActive] = useState(false);
+
+  // Theo dõi số cột responsive (1 cột trên mobile, 2 trên tablet md, 3 trên desktop lg)
+  const [columns, setColumns] = useState(3);
+
+  useEffect(() => {
+    const updateCols = () => {
+      if (typeof window === 'undefined') return;
+      if (window.innerWidth < 768) {
+        setColumns(1);
+      } else if (window.innerWidth < 1024) {
+        setColumns(2);
+      } else {
+        setColumns(3);
+      }
+    };
+    updateCols();
+    window.addEventListener('resize', updateCols);
+    return () => window.removeEventListener('resize', updateCols);
+  }, []);
+
+  // Debounce search input 250ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // Tính số thế hệ tối đa động từ danh sách thành viên (tối thiểu là 7)
   const maxGen = useMemo(() => {
@@ -85,6 +147,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   // Kiểm tra đang có bất kỳ bộ lọc nào được áp dụng không
   const hasActiveFilters = Boolean(
     searchTerm.trim() ||
+    debouncedSearch.trim() ||
     genderFilter !== 'all' ||
     branchFilter !== 'all' ||
     genFilter !== 'all' ||
@@ -148,51 +211,68 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
 
   const handleScrollToSearch = () => {
     setFiltersExpanded(true);
+    if (stickyBarRef.current) {
+      stickyBarRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
     setTimeout(() => {
-      if (searchInputRef.current) {
-        searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        searchInputRef.current.focus({ preventScroll: true });
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    }, 50);
+      searchInputRef.current?.focus();
+    }, 350);
   };
 
   const handleOpenFilters = () => {
     setFiltersExpanded(true);
     setTimeout(() => {
       searchInputRef.current?.focus();
-    }, 50);
+    }, 150);
   };
 
-  const isAdmin = currentUserRole === 'admin' || currentUserProfile?.role === 'admin';
+  const handleResetFilters = useCallback(() => {
+    setSearchTerm('');
+    setDebouncedSearch('');
+    setGenderFilter('all');
+    setBranchFilter('all');
+    setGenFilter('all');
+    setStatusFilter('all');
+    setLocationFilter('all');
+    setSortBy('generation_branch');
+  }, []);
 
-  const stats = useMemo(() => calculateClanStats(members), [members]);
-
+  // Các chi phái duy nhất trong danh sách
   const branches = useMemo(() => {
-    return Array.from(new Set(members.map(m => m.branch).filter(Boolean)));
-  }, [members]);
-
-  const locations = useMemo(() => {
-    const locs = members.map(m => m.address).filter(Boolean) as string[];
-    const cities = new Set<string>();
-    locs.forEach(l => {
-      if (l.includes('Hà Nội')) cities.add('Hà Nội');
-      else if (l.includes('Hưng Yên')) cities.add('Hưng Yên');
-      else if (l.includes('Hồ Chí Minh') || l.includes('TP.HCM')) cities.add('TP. Hồ Chí Minh');
-      else if (l.includes('Đà Nẵng')) cities.add('Đà Nẵng');
-      else if (l.includes('Bắc Ninh')) cities.add('Bắc Ninh');
-      else if (l.includes('Thái Nguyên')) cities.add('Thái Nguyên');
-      else if (l.includes('Vũng Tàu')) cities.add('Vũng Tàu');
+    const set = new Set<string>();
+    members.forEach(m => {
+      if (m.branch) set.add(m.branch);
     });
-    return Array.from(cities);
+    return Array.from(set);
   }, [members]);
 
+  // Các địa phương (tỉnh/thành) duy nhất trích từ địa chỉ
+  const locations = useMemo(() => {
+    const set = new Set<string>();
+    members.forEach(m => {
+      if (m.address) {
+        const parts = m.address.split(',');
+        const city = parts[parts.length - 1]?.trim();
+        if (city && city.length > 2) set.add(city);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [members]);
+
+  const stats = useMemo(() => {
+    return calculateClanStats(members);
+  }, [members]);
+
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'editor';
+
+  // Lọc và sắp xếp danh sách thành viên với debouncedSearch
   const filteredMembers = useMemo(() => {
-    const list = members.filter((m) => {
-      // Search term
-      if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
+    const list = members.filter(m => {
+      // Search term query
+      if (debouncedSearch.trim()) {
+        const q = debouncedSearch.toLowerCase().trim();
         const matchName = m.fullName.toLowerCase().includes(q);
         const matchPhone = m.phone ? m.phone.includes(q) : false;
         const matchSpouse = m.spouse ? m.spouse.toLowerCase().includes(q) : false;
@@ -233,7 +313,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
 
     // Sắp xếp danh sách thành viên:
     if (sortBy === 'name_asc') {
-      return list.sort((a, b) => {
+      return [...list].sort((a, b) => {
         const nameComp = (a.fullName || '').trim().localeCompare((b.fullName || '').trim(), 'vi');
         if (nameComp !== 0) return nameComp;
         return compareMembersForList(a, b);
@@ -241,8 +321,125 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
     }
 
     // Mặc định: Sắp xếp theo đời & chi phái chuẩn phả hệ họ tộc
-    return list.sort(compareMembersForList);
-  }, [members, searchTerm, genderFilter, branchFilter, genFilter, statusFilter, locationFilter, sortBy]);
+    return [...list].sort(compareMembersForList);
+  }, [members, debouncedSearch, genderFilter, branchFilter, genFilter, statusFilter, locationFilter, sortBy]);
+
+  // Phân nhóm theo đời (generation)
+  const generationGroups = useMemo(() => {
+    const groups: { [gen: number]: ClanMember[] } = {};
+    filteredMembers.forEach((m) => {
+      if (!groups[m.generation]) groups[m.generation] = [];
+      groups[m.generation].push(m);
+    });
+    return groups;
+  }, [filteredMembers]);
+
+  const generationKeys = useMemo(() => {
+    return Object.keys(generationGroups)
+      .map(Number)
+      .sort((a, b) => a - b);
+  }, [generationGroups]);
+
+  // Toggle thu gọn/mở rộng từng thế hệ
+  const toggleGenCollapse = useCallback((genNum: number) => {
+    setCollapsedGens((prev) => {
+      const next = new Set(prev);
+      if (next.has(genNum)) {
+        next.delete(genNum);
+      } else {
+        next.add(genNum);
+      }
+      return next;
+    });
+  }, []);
+
+  const collapseAllGens = useCallback(() => {
+    setCollapsedGens(new Set(generationKeys));
+  }, [generationKeys]);
+
+  const expandAllGens = useCallback(() => {
+    setCollapsedGens(new Set());
+  }, []);
+
+  // Tạo danh sách Virtual Items tùy theo viewMode
+  const virtualItems = useMemo<DirectoryVirtualItem[]>(() => {
+    const items: DirectoryVirtualItem[] = [];
+
+    if (viewMode === 'by_generation') {
+      generationKeys.forEach((genNum) => {
+        const list = generationGroups[genNum] || [];
+        if (list.length === 0) return;
+        const isCollapsed = collapsedGens.has(genNum);
+        const romanTitle = getGenerationRomanTitle(genNum);
+
+        // Header của đời
+        items.push({
+          type: 'generation_header',
+          id: `gen-header-${genNum}`,
+          genNum,
+          romanTitle,
+          count: list.length,
+          isCollapsed,
+        });
+
+        // Các hàng thành viên (chỉ render nếu đời chưa bị thu gọn)
+        if (!isCollapsed) {
+          for (let i = 0; i < list.length; i += columns) {
+            items.push({
+              type: 'member_row',
+              id: `gen-${genNum}-row-${i}`,
+              members: list.slice(i, i + columns),
+              variant: 'generation',
+              genNum,
+            });
+          }
+        }
+      });
+    } else {
+      // Danh sách phẳng
+      for (let i = 0; i < filteredMembers.length; i += columns) {
+        items.push({
+          type: 'member_row',
+          id: `flat-row-${i}`,
+          members: filteredMembers.slice(i, i + columns),
+          variant: 'directory',
+        });
+      }
+    }
+
+    return items;
+  }, [viewMode, generationKeys, generationGroups, collapsedGens, filteredMembers, columns]);
+
+  // Vùng chứa danh sách và Virtualizer cuộn toàn trang (Window Virtualizer)
+  const parentRef = useRef<HTMLDivElement>(null);
+  const [parentOffsetTop, setParentOffsetTop] = useState(0);
+
+  useEffect(() => {
+    const updateOffset = () => {
+      if (parentRef.current) {
+        setParentOffsetTop(parentRef.current.offsetTop);
+      }
+    };
+    updateOffset();
+    const t = setTimeout(updateOffset, 150);
+    window.addEventListener('resize', updateOffset);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('resize', updateOffset);
+    };
+  }, [filtersExpanded, isStickyActive, viewMode, filteredMembers.length]);
+
+  const rowVirtualizer = useWindowVirtualizer({
+    count: virtualItems.length,
+    estimateSize: (index) => {
+      const item = virtualItems[index];
+      if (!item) return 200;
+      if (item.type === 'generation_header') return 76;
+      return item.variant === 'directory' ? 275 : 185;
+    },
+    overscan: 4,
+    scrollMargin: parentRef.current?.offsetTop ?? parentOffsetTop,
+  });
 
   const exportCSV = () => {
     const headers = ["Họ và Tên", "Giới Tính", "Đời Thứ", "Chi Nhánh", "Tuổi / Niên Đại", "Tình Trạng", "Số Điện Thoại", "Địa Chỉ", "Nghề Nghiệp"];
@@ -325,7 +522,37 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* View Mode Toggle Switcher [Theo đời] [Danh sách phẳng] */}
+            <div className="bg-stone-900/90 rounded-2xl p-1 flex items-center border border-amber-900/60 text-xs shadow-md">
+              <button
+                type="button"
+                onClick={() => setViewMode('by_generation')}
+                className={`px-3 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === 'by_generation'
+                    ? 'bg-amber-700 text-white shadow-sm'
+                    : 'text-stone-300 hover:text-amber-200'
+                }`}
+                title="Xem danh bạ gom nhóm theo từng đời (Thế hệ)"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Theo Đời</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('flat')}
+                className={`px-3 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === 'flat'
+                    ? 'bg-amber-700 text-white shadow-sm'
+                    : 'text-stone-300 hover:text-amber-200'
+                }`}
+                title="Xem danh sách liên tục dạng phẳng"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Danh Sách Phẳng</span>
+              </button>
+            </div>
+
             {isAdmin && (
               <button
                 onClick={exportCSV}
@@ -347,41 +574,49 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
           </div>
         </div>
 
-        {/* Stats Strip */}
-        <div className="max-w-7xl mx-auto mt-4 pt-3 border-t border-amber-900/40 flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-stone-300">
-          <div className="flex items-center gap-1.5 bg-stone-900/80 px-2.5 py-1 rounded-lg border border-amber-900/40">
-            <Users className="w-3.5 h-3.5 text-amber-400" />
-            <span>Tổng: <strong className="text-white">{stats.total}</strong> thành viên</span>
+        {/* Quick Stats Grid */}
+        <div className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-6">
+          <div className="bg-stone-900/80 backdrop-blur-xs p-3.5 sm:p-4 rounded-2xl border border-amber-900/40">
+            <span className="text-stone-400 text-xs font-medium block">Tổng thành viên</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-2xl font-bold font-serif-clan text-amber-300">{stats.total}</span>
+              <span className="text-[11px] text-stone-400">người</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-sky-950/60 text-sky-200 px-2.5 py-1 rounded-lg border border-sky-800/50">
-            <span>Nam ♂:</span>
-            <strong className="text-white">{stats.male} ({stats.malePercent}%)</strong>
+          <div className="bg-stone-900/80 backdrop-blur-xs p-3.5 sm:p-4 rounded-2xl border border-amber-900/40">
+            <span className="text-stone-400 text-xs font-medium block">Đang sinh sống</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-2xl font-bold font-serif-clan text-emerald-400">{stats.living}</span>
+              <span className="text-[11px] text-stone-400">người</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-rose-950/60 text-rose-200 px-2.5 py-1 rounded-lg border border-rose-800/50">
-            <span>Nữ ♀:</span>
-            <strong className="text-white">{stats.female} ({stats.femalePercent}%)</strong>
+          <div className="bg-stone-900/80 backdrop-blur-xs p-3.5 sm:p-4 rounded-2xl border border-amber-900/40">
+            <span className="text-stone-400 text-xs font-medium block">Tỷ lệ giới tính</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-sm font-bold text-sky-400">{stats.male} Nam</span>
+              <span className="text-stone-500">·</span>
+              <span className="text-sm font-bold text-rose-400">{stats.female} Nữ</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-emerald-950/60 text-emerald-200 px-2.5 py-1 rounded-lg border border-emerald-800/50">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Còn sống: <strong className="text-white">{stats.living}</strong></span>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-stone-900/80 text-stone-300 px-2.5 py-1 rounded-lg border border-amber-900/40">
-            <Flame className="w-3.5 h-3.5 text-amber-500" />
-            <span>Tiền nhân: <strong className="text-white">{stats.deceased}</strong></span>
+          <div className="bg-stone-900/80 backdrop-blur-xs p-3.5 sm:p-4 rounded-2xl border border-amber-900/40">
+            <span className="text-stone-400 text-xs font-medium block">Quy mô thế hệ</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-2xl font-bold font-serif-clan text-amber-400">{maxGen}</span>
+              <span className="text-[11px] text-stone-400">đời</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         
-        {/* Search & Filter Controls: Sticky container với background solid và z-index z-30 (dưới modal, trên list) */}
-        <div
+        {/* Sticky Filter / Search Toolbar (Sticky, solid white, shadow, z-20) */}
+        <div 
           ref={stickyBarRef}
-          className="sticky top-[88px] sm:top-[104px] z-30 bg-stone-100 py-1.5 transition-all duration-200"
+          className="sticky top-0 z-20 transition-all duration-200"
         >
           {!filtersExpanded ? (
             /* Slim Sticky Bar khi thu gọn (Solid white, border rõ ràng, shadow) */
@@ -405,6 +640,9 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                   <span className="shrink-0 px-2.5 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200 text-[11px] font-bold">
                     {filteredMembers.length} kết quả
                   </span>
+                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-bold">
+                    {viewMode === 'by_generation' ? 'Theo đời' : 'Danh sách phẳng'}
+                  </span>
                   {hasActiveFilters && (
                     <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-amber-100/90 text-amber-900 border border-amber-200/70 text-[10px] font-bold">
                       Đang lọc
@@ -414,18 +652,46 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                {/* Mode Switch in Slim Sticky */}
+                <div className="flex items-center bg-stone-100 p-0.5 rounded-lg border border-stone-200">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setViewMode('by_generation');
+                    }}
+                    className={`p-1.5 rounded-md transition-all ${
+                      viewMode === 'by_generation'
+                        ? 'bg-amber-800 text-white shadow-xs'
+                        : 'text-stone-500 hover:text-stone-900'
+                    }`}
+                    title="Chế độ theo đời"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setViewMode('flat');
+                    }}
+                    className={`p-1.5 rounded-md transition-all ${
+                      viewMode === 'flat'
+                        ? 'bg-amber-800 text-white shadow-xs'
+                        : 'text-stone-500 hover:text-stone-900'
+                    }`}
+                    title="Chế độ danh sách phẳng"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
                 {hasActiveFilters && (
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSearchTerm('');
-                      setGenderFilter('all');
-                      setBranchFilter('all');
-                      setGenFilter('all');
-                      setStatusFilter('all');
-                      setLocationFilter('all');
-                      setSortBy('generation_branch');
+                      handleResetFilters();
                     }}
                     className="px-2 py-1 text-xs text-amber-800 hover:text-amber-900 font-semibold hover:underline hidden sm:block cursor-pointer"
                   >
@@ -439,7 +705,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                   title="Mở thanh tìm kiếm và bộ lọc"
                 >
                   <Filter className="w-3.5 h-3.5" />
-                  <span>Lọc / Mở tìm kiếm</span>
+                  <span>Lọc / Mở</span>
                 </button>
               </div>
             </div>
@@ -461,7 +727,10 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                   {searchTerm && (
                     <button
                       type="button"
-                      onClick={() => setSearchTerm('')}
+                      onClick={() => {
+                        setSearchTerm('');
+                        setDebouncedSearch('');
+                      }}
                       className="absolute right-4 top-3 text-stone-400 hover:text-stone-700 text-sm font-semibold cursor-pointer"
                     >
                       Xóa
@@ -595,9 +864,9 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
 
               </div>
 
-              {/* Result Count, Clear Filters and Collapse */}
-              <div className="flex items-center justify-between pt-2 border-t border-stone-100 text-xs text-stone-600">
-                <div className="flex items-center gap-2">
+              {/* Bottom line: Result Count, Mode Toggle, and Reset Button */}
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-stone-500 pt-2 border-t border-stone-200/80">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span>Tìm thấy <strong>{filteredMembers.length}</strong> kết quả phù hợp</span>
                   {sortBy === 'name_asc' && (
                     <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-semibold text-[11px]">
@@ -605,18 +874,40 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-3">
+
+                {/* Mode Selector inside Expanded Card */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('by_generation')}
+                      className={`px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                        viewMode === 'by_generation'
+                          ? 'bg-amber-800 text-white shadow-xs'
+                          : 'text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      <Layers className="w-3 h-3" />
+                      <span>Theo đời</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('flat')}
+                      className={`px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                        viewMode === 'flat'
+                          ? 'bg-amber-800 text-white shadow-xs'
+                          : 'text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      <Users className="w-3 h-3" />
+                      <span>Danh sách phẳng</span>
+                    </button>
+                  </div>
+
                   {hasActiveFilters && (
                     <button
-                      onClick={() => {
-                        setSearchTerm('');
-                        setGenderFilter('all');
-                        setBranchFilter('all');
-                        setGenFilter('all');
-                        setStatusFilter('all');
-                        setLocationFilter('all');
-                        setSortBy('generation_branch');
-                      }}
+                      type="button"
+                      onClick={handleResetFilters}
                       className="text-amber-800 font-semibold hover:underline cursor-pointer"
                     >
                       Đặt lại toàn bộ bộ lọc
@@ -648,18 +939,154 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
           />
         )}
 
-        {/* Directory Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-5 relative z-0">
-          {filteredMembers.map((member) => (
-            <MemberListCard
-              key={member.id}
-              member={member}
-              allMembers={members}
-              showPhone={true}
-              showOccupation={true}
-              onClick={() => onSelectMember(member)}
-            />
-          ))}
+        {/* Toolbar điều khiển Mở rộng/Thu gọn toàn bộ các đời (chỉ hiện khi viewMode === 'by_generation') */}
+        {viewMode === 'by_generation' && filteredMembers.length > 0 && (
+          <div className="flex items-center justify-between gap-3 pt-4 pb-2 text-xs text-stone-600">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span>Gồm <strong className="text-amber-900 font-bold">{generationKeys.length}</strong> thế hệ</span>
+              {collapsedGens.size > 0 && (
+                <span className="text-stone-500 text-[11px]">
+                  (đang thu gọn {collapsedGens.size}/{generationKeys.length} đời)
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={expandAllGens}
+                disabled={collapsedGens.size === 0}
+                className="px-2.5 py-1 rounded-lg bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 hover:text-stone-900 disabled:opacity-40 disabled:cursor-not-allowed font-medium text-[11px] transition-all cursor-pointer shadow-2xs"
+                title="Mở rộng tất cả các đời"
+              >
+                Mở rộng tất cả
+              </button>
+              <button
+                type="button"
+                onClick={collapseAllGens}
+                disabled={collapsedGens.size === generationKeys.length}
+                className="px-2.5 py-1 rounded-lg bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 hover:text-stone-900 disabled:opacity-40 disabled:cursor-not-allowed font-medium text-[11px] transition-all cursor-pointer shadow-2xs"
+                title="Thu gọn tất cả các đời"
+              >
+                Thu gọn tất cả
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Container hiển thị danh sách thành viên được tối ưu bằng Window Virtualization */}
+        <div ref={parentRef} className="mt-3 relative z-0">
+          {filteredMembers.length === 0 ? (
+            /* Empty State khi không tìm thấy kết quả */
+            <div className="bg-white rounded-3xl border border-stone-200 p-12 text-center shadow-sm max-w-lg mx-auto my-8">
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 flex items-center justify-center mx-auto mb-4">
+                <Users className="w-7 h-7 text-amber-700" />
+              </div>
+              <h3 className="text-lg font-bold font-serif-clan text-stone-900 mb-1.5">
+                Không tìm thấy thành viên phù hợp
+              </h3>
+              <p className="text-xs text-stone-500 mb-5 leading-relaxed">
+                Không có dữ liệu thành viên trùng khớp với từ khóa tìm kiếm hoặc các điều kiện lọc đang chọn.
+              </p>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="px-4 py-2 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+                >
+                  Đặt lại toàn bộ bộ lọc
+                </button>
+              )}
+            </div>
+          ) : (
+            /* Virtualized Window List Container */
+            <div
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const item = virtualItems[virtualRow.index];
+                if (!item) return null;
+
+                return (
+                  <div
+                    key={item.id}
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)`,
+                    }}
+                  >
+                    {item.type === 'generation_header' ? (
+                      /* Header thế hệ (đời) dạng Accordion có thể click để đóng/mở */
+                      <div className="pt-4 pb-3">
+                        <div
+                          onClick={() => toggleGenCollapse(item.genNum)}
+                          className="bg-white hover:bg-amber-50/40 rounded-2xl border border-stone-200 hover:border-amber-400 p-3.5 sm:p-4 shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-between gap-3 group select-none"
+                          title={item.isCollapsed ? `Mở rộng Đời ${item.genNum}` : `Thu gọn Đời ${item.genNum}`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-amber-800 to-amber-950 text-amber-100 flex items-center justify-center font-bold font-serif-clan text-sm sm:text-base shrink-0 shadow-sm border border-amber-700/50">
+                              {item.genNum}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-base sm:text-lg font-bold font-serif-clan text-stone-900 group-hover:text-amber-900 transition-colors">
+                                  Thế Hệ Thứ {item.romanTitle}
+                                </h3>
+                                <span className="px-2 py-0.5 rounded-full bg-amber-100/80 text-amber-900 text-[11px] font-bold border border-amber-200">
+                                  {item.count} thành viên
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-stone-500 truncate mt-0.5">
+                                {item.isCollapsed ? 'Đang thu gọn (nhấn để xem danh sách)' : 'Nhấn để thu gọn thế hệ này'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs font-semibold text-amber-800 hidden sm:inline">
+                              {item.isCollapsed ? 'Mở rộng' : 'Thu gọn'}
+                            </span>
+                            <div className="w-7 h-7 rounded-lg bg-stone-100 group-hover:bg-amber-100 text-stone-600 group-hover:text-amber-800 flex items-center justify-center transition-colors">
+                              {item.isCollapsed ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronUp className="w-4 h-4" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Hàng hiển thị thẻ thành viên responsive grid */
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 pb-4 sm:pb-5">
+                        {item.members.map((member) => (
+                          <MemberListCard
+                            key={member.id}
+                            member={member}
+                            allMembers={members}
+                            variant={item.variant}
+                            showPhone={item.variant === 'directory'}
+                            showOccupation={item.variant === 'directory'}
+                            showSpouse={true}
+                            showAddress={true}
+                            onClick={() => onSelectMember(member)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
       </div>
