@@ -559,7 +559,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         container.innerHTML = '';
       }
     };
-  }, [chartData, maxGen, searchQuery, genderFilter]);
+  }, [chartData, maxGen, genderFilter]);
 
   // Manual Zoom In (hỗ trợ cả f3.handlers.manualZoom và fallback)
   const handleZoomIn = () => {
@@ -1038,19 +1038,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         pdf.text(pageSubtitle, marginPt + 8, marginPt + 42);
       };
 
-      // Helper vẽ Footer trên từng trang PDF (đã xóa hoàn toàn dòng ghi chú / footer ở cuối trang theo yêu cầu)
-      const drawPdfFooter = (_pageNumber: number, _totalPages: number) => {
-        // Đã xóa toàn bộ dòng ghi chú / footer / trial / demo ở cuối trang
-      };
-
-      // Ưu tiên tạo PDF 1 trang landscape: Chỉ chia nhiều trang nếu cây quá đồ sộ (> 4000px bề rộng và hơn 80 người)
-      const isColossalTree = sourceW > 4000 && members.length > 80;
-      const numSegments = isColossalTree ? Math.min(5, Math.max(2, Math.ceil(sourceW / 1400))) : 1;
-      const totalPages = isColossalTree ? numSegments + 1 : 1;
-
-      // ================= TRANG 1: TOÀN CẢNH CÂY PHẢ HỆ =================
+      // ================= XUẤT PDF 1 TRANG DUY NHẤT (LANDSCAPE) =================
       drawPdfHeader(
-        `GIA PHẢ NỘI TỘC - ${clanUpper} TỘC · ${totalPages > 1 ? 'TỔNG QUAN TOÀN BỘ' : 'TOÀN CẢNH PHẢ HỆ'}`,
+        `GIA PHẢ NỘI TỘC - ${clanUpper} TỘC · TOÀN CẢNH PHẢ HỆ`,
         `Ngày xuất bản: ${formattedDate}  |  Quy mô: ${members.length} thành viên · ${maxGen} thế hệ  |  "${clanInfo.subTitle || 'Uống nước nhớ nguồn - Vạn thuở lưu danh'}"`
       );
 
@@ -1071,77 +1061,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         undefined,
         'FAST'
       );
-
-      drawPdfFooter(1, totalPages);
-
-      // ================= CÁC TRANG TIẾP THEO: PHÂN ĐOẠN CHI TIẾT NẾU CÂY QUÁ ĐỒ SỘ =================
-      if (isColossalTree && numSegments > 1) {
-        const overlapPx = 160; // Vùng gối đầu 160px để không bị cắt giữa các thẻ thành viên
-        const segW = Math.round((sourceW + (numSegments - 1) * overlapPx) / numSegments);
-
-        for (let i = 0; i < numSegments; i++) {
-          pdf.addPage([pageW, pageH], 'landscape');
-          const pageIndex = i + 2;
-
-          const startX = Math.max(0, Math.round(i * (segW - overlapPx)));
-          const endX = Math.min(sourceW, startX + segW);
-          const actualSegW = endX - startX;
-
-          const actualImgW = img.naturalWidth || Math.round(sourceW * exportScale);
-          const actualImgH = img.naturalHeight || Math.round(sourceH * exportScale);
-          const realScaleX = actualImgW / sourceW;
-          const realScaleY = actualImgH / sourceH;
-
-          // Tạo Canvas cắt phân đoạn ảnh độ phân giải cao
-          const sliceCanvas = document.createElement('canvas');
-          sliceCanvas.width = Math.round(actualSegW * realScaleX);
-          sliceCanvas.height = Math.round(sourceH * realScaleY);
-          const ctx = sliceCanvas.getContext('2d');
-
-          if (ctx) {
-            ctx.fillStyle = '#faf7f2';
-            ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-            ctx.drawImage(
-              img,
-              Math.round(startX * realScaleX),
-              0,
-              Math.round(actualSegW * realScaleX),
-              actualImgH,
-              0,
-              0,
-              sliceCanvas.width,
-              sliceCanvas.height
-            );
-          }
-
-          const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
-
-          drawPdfHeader(
-            `GIA PHẢ NỘI TỘC - ${clanUpper} TỘC · CHI TIẾT PHÂN ĐOẠN ${i + 1}/${numSegments}`,
-            `Phóng to chi tiết (Trang ${pageIndex}/${totalPages}) — Kích thước chữ lớn, đọc rõ ràng tên tuổi & thế hệ không cần zoom`
-          );
-
-          // Vẽ ảnh phân đoạn phóng đại vào trang PDF
-          const segScale = Math.min(availW / actualSegW, availH / sourceH);
-          const segDrawW = actualSegW * segScale;
-          const segDrawH = sourceH * segScale;
-          const segX = marginPt + (availW - segDrawW) / 2;
-          const segY = headerHeightPt + marginPt + (availH - segDrawH) / 2;
-
-          pdf.addImage(
-            sliceData,
-            'JPEG',
-            segX,
-            segY,
-            segDrawW,
-            segDrawH,
-            undefined,
-            'FAST'
-          );
-
-          drawPdfFooter(pageIndex, totalPages);
-        }
-      }
 
       // Lưu file PDF hoàn chỉnh
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
