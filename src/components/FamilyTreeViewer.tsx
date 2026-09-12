@@ -273,17 +273,45 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     return calculateClanStats(members);
   }, [members]);
 
+  // Helper loại bỏ dấu tiếng Việt để tìm kiếm không dấu / có dấu đều khớp chính xác
+  const removeVietnameseAccents = (str: string) => {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D');
+  };
+
   // Check matching search
-  const isMatchSearch = (m: ClanMember) => {
-    if (!searchQuery.trim()) return false;
-    const q = searchQuery.toLowerCase();
-    const matchSpouseList = m.spouseList && m.spouseList.some(s => s.name?.toLowerCase().includes(q));
+  const isMatchSearch = (m: ClanMember | undefined | null) => {
+    if (!m) return false;
+    const trimmed = searchQuery.trim();
+    if (!trimmed) return false;
+    const q = trimmed.toLowerCase();
+    const qUnaccent = removeVietnameseAccents(q);
+
+    const checkText = (text?: string | null) => {
+      if (!text) return false;
+      const lower = text.toLowerCase();
+      return lower.includes(q) || removeVietnameseAccents(lower).includes(qUnaccent);
+    };
+
+    const matchSpouseList = m.spouseList && m.spouseList.some(s => checkText(s.name) || checkText(s.note));
+    const matchSpouseIds = m.spouseIds && m.spouseIds.some(sid => {
+      const sp = members.find(x => x.id === sid);
+      return checkText(sp?.fullName);
+    });
+
     return (
-      m.fullName.toLowerCase().includes(q) ||
-      (m.spouse && m.spouse.toLowerCase().includes(q)) ||
+      checkText(m.fullName) ||
+      checkText(m.spouse) ||
       Boolean(matchSpouseList) ||
-      (m.title && m.title.toLowerCase().includes(q)) ||
-      (m.occupation && m.occupation.toLowerCase().includes(q))
+      Boolean(matchSpouseIds) ||
+      checkText(m.title) ||
+      checkText(m.occupation) ||
+      checkText(m.address) ||
+      checkText(m.branch) ||
+      checkText(m.motherName)
     );
   };
 
@@ -295,7 +323,11 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
   // Build card inner HTML with boosted text sizes (minimum 11-12px) for crisp readability
   const createCardInnerHtml = (d: any) => {
-    const member: ClanMember = d.data?.data?.rawMember;
+    const member: ClanMember | undefined =
+      d?.data?.data?.rawMember ||
+      d?.data?.rawMember ||
+      d?.rawMember ||
+      members.find(x => x.id === (d?.data?.id || d?.id || d?.data?.data?.id));
     if (!member) {
       return `<div class="p-3 bg-white rounded-xl shadow border text-stone-600 text-xs">Thành viên</div>`;
     }
@@ -305,11 +337,14 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     const ageInfo = calculateAgeInfo(member.birthYear, member.deathYear, member.isAlive);
     const genderVisual = getGenderVisuals(member.gender, member.generation);
 
+    const hasSearch = Boolean(searchQuery && searchQuery.trim());
     const isHighlighted = isMatchSearch(member);
     const matchesGender = isGenderMatch(member);
 
     const cardBgClass = isHighlighted
-      ? 'ring-4 ring-amber-400 bg-amber-50 border-amber-600 shadow-xl scale-[1.02]'
+      ? 'ring-4 ring-amber-500 bg-amber-50/95 border-amber-600 shadow-2xl scale-[1.03] z-20 ring-offset-2 ring-offset-white'
+      : hasSearch
+      ? 'opacity-30 grayscale-[40%] bg-stone-100/90 border-stone-300'
       : !matchesGender
       ? 'opacity-35 bg-stone-100/90 border-stone-200 grayscale-30'
       : member.isAlive
@@ -391,6 +426,11 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             <span class="text-[11px] font-semibold text-stone-600 truncate max-w-[90px]">
               ${escapeHtml(member.branch || '')}
             </span>
+            ${isHighlighted ? `
+              <span class="px-1.5 py-0.5 rounded-md text-[10.5px] font-bold bg-amber-600 text-white shadow-xs inline-flex items-center gap-0.5">
+                <span>🎯 Khớp</span>
+              </span>
+            ` : ''}
           </div>
           <div class="flex items-center gap-1 shrink-0">
             ${member.isAlive ? `
@@ -417,7 +457,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1 flex-wrap">
-              <h4 class="font-bold text-base font-serif-clan text-stone-950 truncate tracking-tight">
+              <h4 class="font-bold text-base font-serif-clan ${isHighlighted ? 'text-amber-950 font-black underline decoration-amber-500 decoration-2' : 'text-stone-950'} truncate tracking-tight">
                 ${escapeHtml(member.fullName)}
               </h4>
               ${member.title ? `
@@ -990,17 +1030,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         pdf.text(pageSubtitle, marginPt + 8, marginPt + 42);
       };
 
-      // Helper vẽ Footer trên từng trang PDF
-      const drawPdfFooter = (pageNumber: number, totalPages: number) => {
-        pdf.setTextColor(120, 113, 108); // Stone-500
-        pdf.setFontSize(8.5);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(
-          `Gia Phả Dòng Họ ${clanInfo.clanSurname} · Trang ${pageNumber} / ${totalPages} · Tối ưu hiển thị sắc nét trên thiết bị di động (Samsung S24 Ultra, Tablet) & In ấn A3`,
-          pageW / 2,
-          pageH - 12,
-          { align: 'center' }
-        );
+      // Helper vẽ Footer trên từng trang PDF (đã xóa hoàn toàn dòng ghi chú / footer ở cuối trang theo yêu cầu)
+      const drawPdfFooter = (_pageNumber: number, _totalPages: number) => {
+        // Đã xóa toàn bộ dòng ghi chú / footer / trial / demo ở cuối trang
       };
 
       // Tính số phân đoạn ngang: nếu cây rộng (> 1200px), tự động chia thành các trang chi tiết phóng to
@@ -1366,7 +1398,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                   <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Tìm tên, tước vị, phối ngẫu..."
+                    placeholder="Tìm tên, chức vị, phối ngẫu..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-stone-900/90 border border-amber-900/50 text-amber-50 text-xs placeholder:text-stone-500 focus:outline-none focus:border-amber-500"
@@ -1458,54 +1490,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                   />
                   <span>Hiện phối ngẫu (Vợ / Chồng)</span>
                 </label>
-
-                {/* On-toolbar Canvas Navigation Controls (Giữ lại đầy đủ ở thanh bộ lọc) */}
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={handleFitTree}
-                    className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 text-[11px] font-semibold cursor-pointer flex items-center gap-1"
-                    title="Thu nhỏ để xem toàn bộ cây trong 1 màn hình"
-                  >
-                    <Maximize2 className="w-3 h-3 text-amber-400" />
-                    <span>Xem toàn bộ</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCenterRoot}
-                    className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] cursor-pointer"
-                    title="Căn giữa về Cụ Thủy Tổ"
-                  >
-                    Về Thủy Tổ
-                  </button>
-
-                  <span className="text-stone-600 mx-1">|</span>
-
-                  <button
-                    type="button"
-                    onClick={handleZoomIn}
-                    className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 cursor-pointer"
-                    title="Phóng to"
-                  >
-                    <ZoomIn className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleZoomOut}
-                    className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 cursor-pointer"
-                    title="Thu nhỏ"
-                  >
-                    <ZoomOut className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleFitTree}
-                    className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-200 cursor-pointer"
-                    title="Xem toàn bộ cây vừa màn hình"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
-                </div>
 
               </div>
             </div>
