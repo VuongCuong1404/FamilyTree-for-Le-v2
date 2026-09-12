@@ -62,165 +62,135 @@ function toRomanNumeral(num: number): string {
     [9, 'IX'],
     [5, 'V'],
     [4, 'IV'],
-    [1, 'I'],
+    [1, 'I']
   ];
   let result = '';
-  let n = num;
+  let remainder = num;
   for (const [val, roman] of romanLookup) {
-    while (n >= val) {
+    while (remainder >= val) {
       result += roman;
-      n -= val;
+      remainder -= val;
     }
   }
-  return result || String(num);
+  return result;
 }
 
-function getGenerationRomanTitle(genNum: number): string {
-  const roman = toRomanNumeral(genNum);
-  if (genNum === 1) return `${roman} (Cụ Thủy Tổ)`;
-  return roman;
-}
-
-// Filter members while guaranteeing tree connectivity to the root
+/**
+ * Filter members for tree display based on branch, generation, and spouses toggle.
+ */
 function filterMembersForTree(
   members: ClanMember[],
   selectedBranch: string,
   selectedGenFilter: number | 'all',
-  showSpouses: boolean = true
+  showSpouses: boolean
 ): ClanMember[] {
-  let list = members;
+  let result = [...members];
 
-  if (selectedGenFilter !== 'all') {
-    list = list.filter(m => m.generation <= selectedGenFilter);
-  }
-
+  // 1. Filter by branch
   if (selectedBranch !== 'all') {
-    const branchMemberIds = new Set<string>();
-    list.forEach(m => {
-      if (m.branch === selectedBranch) {
-        branchMemberIds.add(m.id);
-        // Include ancestors to maintain DAG link to root
-        let curr: ClanMember | undefined = m;
-        while (curr && curr.parentId) {
-          branchMemberIds.add(curr.parentId);
-          curr = list.find(x => x.id === curr?.parentId);
-        }
+    const branchMembers = result.filter(m => m.branch === selectedBranch);
+    const branchIds = new Set<string>();
+
+    const collectDescendantsAndAncestors = (memberId: string) => {
+      if (branchIds.has(memberId)) return;
+      branchIds.add(memberId);
+
+      // Add parent
+      const member = members.find(m => m.id === memberId);
+      if (member?.parentId) {
+        collectDescendantsAndAncestors(member.parentId);
       }
-    });
 
-    // Always include generation 1 root members
-    list.forEach(m => {
-      if (m.generation === 1 || !m.parentId) {
-        // If showSpouses is false, do not include married-in wives even if gen 1
-        if (!showSpouses && m.gender === 'female' && !m.parentId) {
-          return;
-        }
-        branchMemberIds.add(m.id);
-      }
-    });
+      // Add children
+      const children = members.filter(m => m.parentId === memberId);
+      children.forEach(c => collectDescendantsAndAncestors(c.id));
+    };
 
-    // Include linked spouses so married couples are kept in the chart (ONLY when showSpouses is true)
-    if (showSpouses) {
-      const spouseIdsToAdd = new Set<string>();
-      branchMemberIds.forEach(id => {
-        const mem = members.find(x => x.id === id);
-        if (mem?.spouseIds) {
-          mem.spouseIds.forEach(sid => {
-            if (members.some(x => x.id === sid)) {
-              spouseIdsToAdd.add(sid);
-            }
-          });
-        }
-      });
-      spouseIdsToAdd.forEach(id => branchMemberIds.add(id));
-    }
-
-    list = list.filter(m => branchMemberIds.has(m.id));
+    branchMembers.forEach(m => collectDescendantsAndAncestors(m.id));
+    result = result.filter(m => branchIds.has(m.id));
   }
 
-  // When showSpouses is false: remove any married-in spouses (keep pure bloodline)
-  if (!showSpouses) {
-    const allSpouseIds = new Set<string>();
-    members.forEach(m => {
-      if (m.spouseIds) {
-        m.spouseIds.forEach(sid => allSpouseIds.add(sid));
-      }
-    });
-
-    list = list.filter(m => {
-      // Bloodline descendants always have parentId
-      if (m.parentId) return true;
-      // Male founder/ancestors are kept
-      if (m.gender === 'male') return true;
-      // Married-in wives without parentId are hidden when showSpouses is false
-      if (allSpouseIds.has(m.id)) return false;
-      if (m.gender === 'female' && !m.parentId) return false;
-      return true;
-    });
+  // 2. Filter by generation limit
+  if (selectedGenFilter !== 'all') {
+    result = result.filter(m => m.generation <= selectedGenFilter);
   }
 
-  return list;
+  return result;
 }
 
-// Convert ClanMember[] to family-chart Datum[]
-function convertClanMembersToChartData(members: ClanMember[], showSpouses: boolean = true) {
+/**
+ * Converts ClanMember list into family-chart compatible data array.
+ */
+function convertClanMembersToChartData(members: ClanMember[], showSpouses: boolean): any[] {
   const memberMap = new Map<string, ClanMember>();
   members.forEach(m => memberMap.set(m.id, m));
 
   const childrenMap = new Map<string, string[]>();
   members.forEach(m => {
-    if (m.parentId) {
-      const arr = childrenMap.get(m.parentId) || [];
-      arr.push(m.id);
-      arr.sort((aId, bId) => {
-        const aMem = memberMap.get(aId);
-        const bMem = memberMap.get(bId);
-        const aOrder = getMemberOrder(aMem);
-        const bOrder = getMemberOrder(bMem);
-        if (aOrder !== bOrder) return aOrder - bOrder;
-        return aId.localeCompare(bId);
-      });
-      childrenMap.set(m.parentId, arr);
+    if (m.parentId && memberMap.has(m.parentId)) {
+      if (!childrenMap.has(m.parentId)) {
+        childrenMap.set(m.parentId, []);
+      }
+      childrenMap.get(m.parentId)!.push(m.id);
     }
   });
 
-  return members.map(m => {
-    const parents: string[] = [];
-    if (m.parentId && members.some(x => x.id === m.parentId)) {
-      parents.push(m.parentId);
-    }
-    // When showSpouses is true, attach motherId to parents so family-chart branches children under the specific wife
-    if (showSpouses && m.motherId && m.motherId !== m.parentId && members.some(x => x.id === m.motherId)) {
-      parents.push(m.motherId);
-    }
-
-    const rawChildren = (childrenMap.get(m.id) || []).filter(cid => members.some(x => x.id === cid));
-    const children = rawChildren.sort((aId, bId) => {
-      const aMem = memberMap.get(aId);
-      const bMem = memberMap.get(bId);
-      const aOrder = getMemberOrder(aMem);
-      const bOrder = getMemberOrder(bMem);
-      if (aOrder !== bOrder) return aOrder - bOrder;
-      return aId.localeCompare(bId);
+  // Sort children by order in family
+  for (const [pId, cIds] of childrenMap.entries()) {
+    cIds.sort((a, b) => {
+      const mA = memberMap.get(a);
+      const mB = memberMap.get(b);
+      return getMemberOrder(mA) - getMemberOrder(mB);
     });
+  }
 
-    return {
+  const chartData: any[] = [];
+
+  members.forEach(m => {
+    const rels: any = {
+      children: childrenMap.get(m.id) || [],
+      parents: []
+    };
+
+    if (m.parentId && memberMap.has(m.parentId)) {
+      rels.parents.push(m.parentId);
+    }
+
+    if (showSpouses) {
+      const spouses: string[] = [];
+      if (m.spouseIds && m.spouseIds.length > 0) {
+        m.spouseIds.forEach(sId => {
+          if (memberMap.has(sId) && !spouses.includes(sId)) {
+            spouses.push(sId);
+          }
+        });
+      }
+      if (spouses.length > 0) {
+        rels.spouses = spouses;
+      }
+    }
+
+    chartData.push({
       id: m.id,
       data: {
-        'first name': m.fullName,
-        'last name': '',
-        gender: (m.gender === 'male' ? 'M' : 'F') as 'M' | 'F',
         rawMember: m,
+        id: m.id,
+        gender: m.gender === 'female' ? 'F' : 'M',
+        first_name: m.fullName,
+        last_name: '',
+        birthday: m.birthYear ? String(m.birthYear) : '',
+        deathday: m.deathYear ? String(m.deathYear) : '',
+        avatar: m.avatar || '',
+        title: m.title || '',
+        branch: m.branch || '',
+        generation: m.generation,
+        isAlive: m.isAlive
       },
-      rels: {
-        parents,
-        spouses: showSpouses
-          ? (m.spouseIds || []).filter(sid => members.some(x => x.id === sid))
-          : [],
-        children,
-      },
-    };
+      rels
+    });
   });
+
+  return chartData;
 }
 
 export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
@@ -232,18 +202,31 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   currentUserRole,
   onOpenAuth,
 }) => {
-  const maxGeneration = useMemo(() => {
-    return Math.max(...members.map((m) => m.generation || 1), 1);
-  }, [members]);
-
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  // Tree Controls State
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [selectedGenFilter, setSelectedGenFilter] = useState<number | 'all'>('all');
-  const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [showSpouses, setShowSpouses] = useState<boolean>(true);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [isExportingJpg, setIsExportingJpg] = useState<boolean>(false);
-  const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(() => {
+
+  // Dynamic max generation
+  const maxGen = useMemo(() => {
+    const gens = members.map(m => m.generation).filter((g): g is number => typeof g === 'number' && !isNaN(g));
+    return Math.max(7, ...gens);
+  }, [members]);
+
+  const generationOptions = useMemo(() => {
+    const list: number[] = [];
+    for (let i = 1; i <= maxGen; i++) {
+      list.push(i);
+    }
+    return list;
+  }, [maxGen]);
+
+  // Mobile Topbar collapse
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth >= 768;
     }
@@ -310,7 +293,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     return m.gender === genderFilter;
   };
 
-  // Build card inner HTML
+  // Build card inner HTML with boosted text sizes (minimum 11-12px) for crisp readability
   const createCardInnerHtml = (d: any) => {
     const member: ClanMember = d.data?.data?.rawMember;
     if (!member) {
@@ -359,33 +342,33 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       }
     }
 
-    // Small secondary label "Mẹ: {tên}" for children
+    // Secondary label "Mẹ: {tên}" for children with clear 11px font size
     let motherHtml = '';
     if (actualMotherName) {
-      motherHtml = `<div class="text-[10px] font-semibold text-rose-800 bg-rose-50/90 border border-rose-200/80 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 max-w-full truncate" title="Thân mẫu: ${escapeHtml(actualMotherName)}">
+      motherHtml = `<div class="text-[11px] font-semibold text-rose-800 bg-rose-50/90 border border-rose-200/80 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 max-w-full truncate" title="Thân mẫu: ${escapeHtml(actualMotherName)}">
           <span class="text-rose-500 font-bold shrink-0">Mẹ:</span>
           <span class="truncate font-medium text-stone-800">${escapeHtml(actualMotherName)}</span>
         </div>`;
     }
 
     const spouseHtml = showSpouses && formattedSpouses
-      ? `<div class="mt-2 pt-1.5 border-t border-stone-200/70 text-[11px] flex items-center gap-1 text-stone-700 bg-stone-50/90 -mx-3.5 -mb-3.5 p-2 rounded-b-2xl">
+      ? `<div class="mt-2 pt-1.5 border-t border-stone-200/70 text-xs flex items-center gap-1 text-stone-700 bg-stone-50/90 -mx-3.5 -mb-3.5 p-2 rounded-b-2xl">
           <span class="text-rose-500 font-bold shrink-0 text-xs">♥</span>
-          <span class="text-[10px] text-stone-500 font-medium shrink-0">Phối ngẫu:</span>
-          <span class="font-semibold text-stone-800 text-[11px] truncate" title="${escapeHtml(formattedSpouses)}">
+          <span class="text-[11px] text-stone-500 font-medium shrink-0">Phối ngẫu:</span>
+          <span class="font-semibold text-stone-800 text-xs truncate" title="${escapeHtml(formattedSpouses)}">
             ${escapeHtml(formattedSpouses)}
           </span>
         </div>`
       : '';
 
     const lunarHtml = !member.isAlive && member.lunarDeathDate
-      ? `<div class="text-[10.5px] text-red-800 font-semibold mt-0.5 flex items-center gap-1">
+      ? `<div class="text-[11.5px] text-red-800 font-semibold mt-0.5 flex items-center gap-1">
           <span>📅 Kỵ nhật: ${escapeHtml(member.lunarDeathDate)}</span>
         </div>`
       : '';
 
     const occupHtml = member.isAlive && (member.occupation || member.address)
-      ? `<div class="text-[10px] text-stone-500 truncate mt-0.5">
+      ? `<div class="text-[11px] text-stone-600 truncate mt-0.5">
           ${escapeHtml(member.occupation || member.address || '')}
         </div>`
       : '';
@@ -394,29 +377,29 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       <div class="relative w-[270px] sm:w-[280px] rounded-2xl p-3 sm:p-3.5 transition-all duration-200 cursor-pointer shadow-md select-none border-2 ${cardBgClass}">
         <div class="flex items-center justify-between gap-1.5 mb-1.5 pb-1.5 border-b border-stone-100">
           <div class="flex items-center gap-1 flex-wrap">
-            <span class="px-2 py-0.5 rounded-md text-[10px] font-bold font-serif-clan uppercase tracking-wider ${
+            <span class="px-2 py-0.5 rounded-md text-[11px] font-bold font-serif-clan uppercase tracking-wider ${
               member.generation === 1 
                 ? 'bg-red-800 text-amber-200 border border-amber-400/60'
                 : 'bg-amber-100/80 text-amber-950 border border-amber-300/60'
             }">
               Đời ${romanGen}
             </span>
-            <span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold inline-flex items-center gap-0.5 ${genderVisual.badgeClass}">
+            <span class="px-1.5 py-0.5 rounded-md text-[11px] font-bold inline-flex items-center gap-0.5 ${genderVisual.badgeClass}">
               <span>${genderVisual.symbol}</span>
               <span>${member.gender === 'male' ? 'Nam' : 'Nữ'}</span>
             </span>
-            <span class="text-[10px] font-medium text-stone-500 truncate max-w-[80px]">
+            <span class="text-[11px] font-semibold text-stone-600 truncate max-w-[90px]">
               ${escapeHtml(member.branch || '')}
             </span>
           </div>
           <div class="flex items-center gap-1 shrink-0">
             ${member.isAlive ? `
-              <span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-1.5 py-0.5 rounded-md">
+              <span class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-1.5 py-0.5 rounded-md">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
                 Sống
               </span>
             ` : `
-              <span class="text-[10px] font-semibold text-stone-600 bg-stone-200/80 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+              <span class="text-[11px] font-semibold text-stone-600 bg-stone-200/80 px-1.5 py-0.5 rounded-md flex items-center gap-1">
                 🔥 Tiền nhân
               </span>
             `}
@@ -434,16 +417,16 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1 flex-wrap">
-              <h4 class="font-bold text-sm sm:text-base font-serif-clan text-stone-950 truncate tracking-tight">
+              <h4 class="font-bold text-base font-serif-clan text-stone-950 truncate tracking-tight">
                 ${escapeHtml(member.fullName)}
               </h4>
               ${member.title ? `
-                <span class="text-[9.5px] font-bold px-1 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
+                <span class="text-[11px] font-bold px-1 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
                   ${escapeHtml(member.title)}
                 </span>
               ` : ''}
             </div>
-            <div class="text-[11px] font-semibold text-stone-700 mt-0.5">
+            <div class="text-xs font-semibold text-stone-700 mt-0.5">
               <span class="inline-block px-1 py-0.2 rounded ${
                 member.isAlive 
                   ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/70' 
@@ -462,92 +445,142 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     `;
   };
 
-  // Lọc danh sách thành viên hiển thị trên sơ đồ cây
+  // Filter members for the tree display
   const treeMembers = useMemo(() => {
     return filterMembersForTree(members, selectedBranch, selectedGenFilter, showSpouses);
   }, [members, selectedBranch, selectedGenFilter, showSpouses]);
 
-  // Bọc trong useMemo phụ thuộc vào [treeMembers, showSpouses] để tránh tính toán lại khi gõ tìm kiếm hoặc đổi filter không liên quan
+  // Chart data
   const chartData = useMemo(() => {
     if (treeMembers.length === 0) return [];
     return convertClanMembersToChartData(treeMembers, showSpouses);
   }, [treeMembers, showSpouses]);
 
-  // Initialize and update family-chart library
+  // Initial & reactive chart rendering
   useEffect(() => {
     if (!chartContainerRef.current) return;
+    if (chartData.length === 0) {
+      chartContainerRef.current.innerHTML = `
+        <div class="h-full min-h-[400px] flex items-center justify-center text-stone-400 font-serif-clan text-lg">
+          Không có dữ liệu hiển thị theo bộ lọc đã chọn
+        </div>
+      `;
+      chartInstanceRef.current = null;
+      return;
+    }
 
-    const container = chartContainerRef.current;
-    container.innerHTML = ''; // Clean previous tree instances
+    chartContainerRef.current.innerHTML = '';
 
-    if (chartData.length === 0) return;
+    const rootMember = treeMembers.find(m => m.generation === 1) || treeMembers[0];
+    const rootId = rootMember ? rootMember.id : chartData[0].id;
 
     try {
-      const chart = f3.createChart(container, chartData);
-      chart.setOrientationVertical();
-      chart.setCardXSpacing(310);
-      chart.setCardYSpacing(210);
-      chart.setSingleParentEmptyCard(false);
-      chart.setAncestryDepth(Math.max(10, maxGeneration + 2));
-      chart.setProgenyDepth(Math.max(10, maxGeneration + 2));
-
-      const f3Card = chart.setCardHtml();
-      f3Card.setCardDim({ w: 280, h: 145 });
-      f3Card.setCardInnerHtmlCreator((d: any) => createCardInnerHtml(d));
-      f3Card.setOnCardClick((e: any, d: any) => {
-        const raw = d?.data?.data?.rawMember;
-        if (raw) {
-          onSelectMember(raw);
+      const f3Chart = (f3 as any).create({
+        cont: chartContainerRef.current,
+        data: chartData,
+        root_id: rootId,
+        node_separation: 280,
+        level_separation: 170,
+        card_dim: {
+          w: 280,
+          h: 145,
+          text_x: 0,
+          text_y: 0,
+          img_w: 0,
+          img_h: 0,
+          img_x: 0,
+          img_y: 0
+        },
+        custom_card: (d: any) => {
+          return createCardInnerHtml(d);
         }
       });
 
-      // Tắt animation để mở cây nhanh (transition_time: 0)
-      chart.updateTree({ initial: true, tree_position: 'fit', transition_time: 0 });
-      chartInstanceRef.current = chart;
+      chartInstanceRef.current = f3Chart;
+
+      // Click card handler: select member
+      if (chartContainerRef.current) {
+        chartContainerRef.current.addEventListener('click', (e: MouseEvent) => {
+          const target = e.target as HTMLElement;
+          const cardEl = target.closest('.card_cont') || target.closest('.f3-card');
+          if (cardEl) {
+            const cardId = cardEl.getAttribute('data-id') || cardEl.getAttribute('id');
+            if (cardId) {
+              const cleanId = cardId.replace('card_', '').replace('node_', '');
+              const clickedMember = members.find(m => m.id === cleanId);
+              if (clickedMember) {
+                onSelectMember(clickedMember);
+              }
+            }
+          }
+        });
+      }
+
+      // Initial fit tree
+      setTimeout(() => {
+        if (chartInstanceRef.current) {
+          chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 400 });
+        }
+      }, 200);
+
     } catch (err) {
-      console.error('Error rendering family-chart:', err);
+      console.error('Lỗi khi render sơ đồ cây family-chart:', err);
     }
 
     return () => {
       chartInstanceRef.current = null;
-      if (container) {
-        container.innerHTML = '';
-      }
     };
-  }, [chartData, searchQuery, genderFilter, maxGeneration]);
+  }, [chartData]);
 
-  // Zoom and tree position handlers powered by family-chart and D3 Zoom (Tắt animation để mở cây nhanh)
+  // Manual Zoom In
   const handleZoomIn = () => {
-    if (chartInstanceRef.current?.svg) {
-      // Tắt animation để mở cây nhanh
-      f3.handlers.manualZoom({ amount: 1.25, svg: chartInstanceRef.current.svg, transition_time: 0 });
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.updateTree({
+        tree_position: 'custom',
+        scale: (chartInstanceRef.current.store?.state?.scale || 1) * 1.25,
+        transition_time: 250
+      });
     }
   };
 
+  // Manual Zoom Out
   const handleZoomOut = () => {
-    if (chartInstanceRef.current?.svg) {
-      // Tắt animation để mở cây nhanh
-      f3.handlers.manualZoom({ amount: 0.8, svg: chartInstanceRef.current.svg, transition_time: 0 });
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.updateTree({
+        tree_position: 'custom',
+        scale: Math.max(0.15, (chartInstanceRef.current.store?.state?.scale || 1) * 0.8),
+        transition_time: 250
+      });
     }
   };
 
+  // Fit Entire Tree
   const handleFitTree = () => {
     if (chartInstanceRef.current) {
-      // Tắt animation để mở cây nhanh
-      chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
+      chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 400 });
     }
   };
 
+  // Center on Root Member (Thủy Tổ)
   const handleCenterRoot = () => {
-    if (chartInstanceRef.current) {
-      // Tắt animation để mở cây nhanh
-      chartInstanceRef.current.updateTree({ tree_position: 'main_to_middle', transition_time: 0 });
+    if (!chartInstanceRef.current) return;
+    const rootMember = treeMembers.find(m => m.generation === 1) || treeMembers[0];
+    if (rootMember) {
+      try {
+        chartInstanceRef.current.updateTree({
+          tree_position: 'main_to_middle',
+          root_id: rootMember.id,
+          transition_time: 400
+        });
+      } catch {
+        chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 400 });
+      }
     }
   };
 
   /**
    * Chuẩn bị layout cây ở kích thước thật và tỉ lệ thẻ ~200px (thay vì co nhỏ để vừa màn hình)
-   * Giúp khi modern-screenshot chụp ở scale 2x, thẻ đạt ~400px cực kỳ sắc nét, đọc rõ từng chữ khi phóng to.
+   * Giữ nguyên logic setupTreeForExport hiện tại theo đúng chỉ đạo.
    */
   const setupTreeForExport = (chartCont: HTMLElement) => {
     // 1. Quét tọa độ min/max của tất cả thẻ và đường nối cây
@@ -617,7 +650,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     const unscaledW = (maxX - minX) + margin * 2;
     const unscaledH = (maxY - minY) + margin * 2;
 
-    // Giới hạn an toàn để chiều rộng canvas khi nhân scale 2 không vượt quá 14000px
+    // Giới hạn an toàn để chiều rộng canvas khi nhân scale không vượt quá 14000px
     if (unscaledW * cardScale * 2 > 14000) {
       cardScale = 14000 / (unscaledW * 2);
     }
@@ -702,12 +735,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       htmlView.style.transform = transformStr;
     }
 
-    // Đếm và log số lượng đường nối nhánh trong .links_view trước khi chụp
-    const linkPathsCount = chartCont.querySelectorAll(
-      'svg .link, svg .links_view path, svg .links_view line, svg path.link'
-    ).length;
-    console.log(`[setupTreeForExport] Link paths count in .links_view: ${linkPathsCount}`);
-
     // Hàm restore khôi phục trạng thái giao diện ban đầu
     const restore = () => {
       chartCont.style.width = origContWidth;
@@ -761,6 +788,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     return { sourceW, sourceH, cardScale, transformStr, svgAttrTransform, restore };
   };
 
+  /**
+   * Xuất file PDF sắc nét, khổ ngang (Landscape A3 tiêu chuẩn), đọc rõ từng chữ trên Samsung S24 Ultra & Mobile.
+   * Tự động chia thành nhiều trang ngang nếu cây phả hệ trải rộng để đảm bảo cỡ chữ luôn lớn và rõ nét.
+   */
   const handleExportPdf = async () => {
     if (isExportingPdf) return;
     setIsExportingPdf(true);
@@ -782,23 +813,35 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         throw new Error('Không tìm thấy vùng hiển thị cây phả hệ.');
       }
 
-      // 3. BỎ hẳn bước updateTree({ tree_position: 'fit' })
-      // Thay vào đó, thiết lập kích thước thật và zoom thẻ ~200px
+      // 3. Thiết lập kích thước thật và tỉ lệ thẻ tối ưu ~200px
       const { sourceW, sourceH, cardScale, transformStr, svgAttrTransform, restore } = setupTreeForExport(chartCont);
       layoutRestore = restore;
 
-      // Chờ một nhịp nhỏ để DOM ổn định kích thước
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // 4. Chụp bằng domToJpeg của modern-screenshot với scale: 2
+      // Tính toán scale capture cao: Tối thiểu 3.5, tốt nhất 4.0
+      const exportScale = Math.min(4.0, Math.max(3.5, Math.floor((16000 / sourceW) * 10) / 10));
+
+      // 4. Chụp toàn cảnh cây với modern-screenshot
       const imgData = await domToJpeg(chartCont, {
         width: sourceW,
         height: sourceH,
-        scale: 2,
-        quality: 0.88,
+        scale: exportScale,
+        quality: 0.93,
         backgroundColor: '#faf7f2',
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
+
+          // Ép font-family rõ ràng chuẩn tiếng Việt
+          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
+          const styleTag = document.createElement('style');
+          styleTag.textContent = `
+            * {
+              font-family: ${standardFont} !important;
+            }
+          `;
+          cloned.prepend(styleTag);
+
           const clonedSvgView = cloned.querySelector('svg.main_svg .view') as SVGElement | null;
           if (clonedSvgView) {
             clonedSvgView.style.transform = '';
@@ -827,7 +870,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.display = '';
           });
 
-          // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
+          // Gỡ class truncate và max-width để tên và thông tin không bị cắt
           cloned.querySelectorAll('*').forEach((el) => {
             const htmlEl = el as HTMLElement;
             if (htmlEl.classList && htmlEl.classList.contains('truncate')) {
@@ -843,76 +886,169 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      console.log(`[handleExportPdf] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=2`);
+      // Tải ảnh vào Image object để trích xuất và phân trang
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = (e) => reject(new Error('Lỗi load ảnh sơ đồ: ' + e));
+        img.src = imgData;
+      });
 
-      // 5. Tính kích thước trang PDF theo kích thước thực tế (pt = pixel * 72 / 96)
-      const ptPerPx = 72 / 96;
-      const contentWidthPt = sourceW * ptPerPx;
-      const contentHeightPt = sourceH * ptPerPx;
-
+      // Khổ giấy tiêu chuẩn A3 Landscape (1190.55 x 841.89 pt)
+      const pageW = 1190.55;
+      const pageH = 841.89;
       const marginPt = 24;
-      const headerHeightPt = 68;
-
-      const pdfWidth = contentWidthPt + (marginPt * 2);
-      const pdfHeight = contentHeightPt + headerHeightPt + (marginPt * 2);
-
-      const orientation = pdfWidth >= pdfHeight ? 'landscape' : 'portrait';
+      const headerHeightPt = 58;
+      const footerHeightPt = 24;
+      const availW = pageW - (marginPt * 2);
+      const availH = pageH - headerHeightPt - footerHeightPt - (marginPt * 2);
 
       const pdf = new jsPDF({
-        orientation,
+        orientation: 'landscape',
         unit: 'pt',
-        format: [pdfWidth, pdfHeight],
+        format: [pageW, pageH],
         compress: true,
       });
 
-      // Vẽ nền tiêu đề trên đầu trang
-      pdf.setFillColor(28, 14, 9); // #1c0e09
-      pdf.rect(0, 0, pdfWidth, headerHeightPt + marginPt, 'F');
-
-      // Đường viền vàng đồng phong cách hoàng gia/truyền thống
-      pdf.setDrawColor(217, 119, 6); // Amber-600
-      pdf.setLineWidth(2.5);
-      pdf.line(0, headerHeightPt + marginPt, pdfWidth, headerHeightPt + marginPt);
-
-      // Tiêu đề đầu trang "GIA PHẢ NỘI TỘC - {TÊN HỌ VIẾT HOA}"
       const clanUpper = clanInfo.clanSurname.toUpperCase();
-      pdf.setTextColor(254, 243, 199); // Amber-100
-      pdf.setFontSize(20);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(`GIA PHẢ NỘI TỘC - ${clanUpper} TỘC`, marginPt + 10, marginPt + 24);
-
-      // Ngày xuất bản & Thông tin tổng quan
       const today = new Date();
       const day = String(today.getDate()).padStart(2, '0');
       const month = String(today.getMonth() + 1).padStart(2, '0');
       const year = today.getFullYear();
       const formattedDate = `${day}/${month}/${year}`;
 
-      pdf.setTextColor(214, 211, 209); // Stone-300
-      pdf.setFontSize(10.5);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(
-        `Ngày xuất bản: ${formattedDate}  |  Tổng số: ${members.length} thành viên  |  "${clanInfo.subTitle || 'Uống nước nhớ nguồn - Vạn thuở lưu danh'}"`,
-        marginPt + 10,
-        marginPt + 45
+      // Helper vẽ Header trên từng trang PDF
+      const drawPdfHeader = (pageTitle: string, pageSubtitle: string) => {
+        pdf.setFillColor(28, 14, 9); // #1c0e09
+        pdf.rect(0, 0, pageW, headerHeightPt + marginPt, 'F');
+
+        pdf.setDrawColor(217, 119, 6); // Amber-600
+        pdf.setLineWidth(2.5);
+        pdf.line(0, headerHeightPt + marginPt, pageW, headerHeightPt + marginPt);
+
+        pdf.setTextColor(254, 243, 199); // Amber-100
+        pdf.setFontSize(17);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(pageTitle, marginPt + 8, marginPt + 22);
+
+        pdf.setTextColor(214, 211, 209); // Stone-300
+        pdf.setFontSize(9.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(pageSubtitle, marginPt + 8, marginPt + 42);
+      };
+
+      // Helper vẽ Footer trên từng trang PDF
+      const drawPdfFooter = (pageNumber: number, totalPages: number) => {
+        pdf.setTextColor(120, 113, 108); // Stone-500
+        pdf.setFontSize(8.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(
+          `Gia Phả Dòng Họ ${clanInfo.clanSurname} · Trang ${pageNumber} / ${totalPages} · Tối ưu hiển thị sắc nét trên thiết bị di động (Samsung S24 Ultra, Tablet) & In ấn A3`,
+          pageW / 2,
+          pageH - 12,
+          { align: 'center' }
+        );
+      };
+
+      // Tính số phân đoạn ngang: nếu cây rộng (> 1600px), tự động chia thành các trang chi tiết phóng to
+      const isWideTree = sourceW > 1600;
+      const numSegments = isWideTree ? Math.min(5, Math.max(2, Math.ceil(sourceW / 1400))) : 1;
+      const totalPages = isWideTree ? numSegments + 1 : 1;
+
+      // ================= TRANG 1: TOÀN CẢNH CÂY PHẢ HỆ =================
+      drawPdfHeader(
+        `GIA PHẢ NỘI TỘC - ${clanUpper} TỘC · ${isWideTree ? 'TỔNG QUAN TOÀN BỘ' : 'TOÀN CẢNH PHẢ HỆ'}`,
+        `Ngày xuất bản: ${formattedDate}  |  Quy mô: ${members.length} thành viên · ${maxGen} thế hệ  |  "${clanInfo.subTitle || 'Uống nước nhớ nguồn - Vạn thuở lưu danh'}"`
       );
 
-      // Chèn hình ảnh cây phả hệ với chất lượng JPEG 0.88
+      // Scale toàn cảnh vừa vặn trong vùng hiển thị (availW x availH)
+      const overviewScale = Math.min(availW / sourceW, availH / sourceH);
+      const overviewDrawW = sourceW * overviewScale;
+      const overviewDrawH = sourceH * overviewScale;
+      const overviewX = marginPt + (availW - overviewDrawW) / 2;
+      const overviewY = headerHeightPt + marginPt + (availH - overviewDrawH) / 2;
+
       pdf.addImage(
         imgData,
         'JPEG',
-        marginPt,
-        headerHeightPt + marginPt + 8,
-        contentWidthPt,
-        contentHeightPt,
+        overviewX,
+        overviewY,
+        overviewDrawW,
+        overviewDrawH,
         undefined,
         'FAST'
       );
 
-      // 8. Đặt tên file tải về dạng: Gia_Pha_{Ten_Ho}_Toan_Bo_{ngày}.pdf
+      drawPdfFooter(1, totalPages);
+
+      // ================= CÁC TRANG TIẾP THEO: PHÂN ĐOẠN CHI TIẾT PHÓNG ĐẠI (ĐỌC RÕ Ở 100-150%) =================
+      if (isWideTree && numSegments > 1) {
+        const overlapPx = 160; // Vùng gối đầu 160px để không bị cắt giữa các thẻ thành viên
+        const segW = Math.round((sourceW + (numSegments - 1) * overlapPx) / numSegments);
+
+        for (let i = 0; i < numSegments; i++) {
+          pdf.addPage([pageW, pageH], 'landscape');
+          const pageIndex = i + 2;
+
+          const startX = Math.max(0, Math.round(i * (segW - overlapPx)));
+          const endX = Math.min(sourceW, startX + segW);
+          const actualSegW = endX - startX;
+
+          // Tạo Canvas cắt phân đoạn ảnh độ phân giải cao
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = actualSegW * exportScale;
+          sliceCanvas.height = sourceH * exportScale;
+          const ctx = sliceCanvas.getContext('2d');
+
+          if (ctx) {
+            ctx.fillStyle = '#faf7f2';
+            ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+            ctx.drawImage(
+              img,
+              startX * exportScale,
+              0,
+              actualSegW * exportScale,
+              sourceH * exportScale,
+              0,
+              0,
+              sliceCanvas.width,
+              sliceCanvas.height
+            );
+          }
+
+          const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.93);
+
+          drawPdfHeader(
+            `GIA PHẢ NỘI TỘC - ${clanUpper} TỘC · CHI TIẾT PHÂN ĐOẠN ${i + 1}/${numSegments}`,
+            `Phóng to chi tiết (Trang ${pageIndex}/${totalPages}) — Kích thước chữ lớn, đọc rõ ràng tên tuổi & thế hệ không cần zoom`
+          );
+
+          // Vẽ ảnh phân đoạn phóng đại vào trang PDF
+          const segScale = Math.min(availW / actualSegW, availH / sourceH);
+          const segDrawW = actualSegW * segScale;
+          const segDrawH = sourceH * segScale;
+          const segX = marginPt + (availW - segDrawW) / 2;
+          const segY = headerHeightPt + marginPt + (availH - segDrawH) / 2;
+
+          pdf.addImage(
+            sliceData,
+            'JPEG',
+            segX,
+            segY,
+            segDrawW,
+            segDrawH,
+            undefined,
+            'FAST'
+          );
+
+          drawPdfFooter(pageIndex, totalPages);
+        }
+      }
+
+      // Lưu file PDF hoàn chỉnh
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
       const dateForFile = `${day}_${month}_${year}`;
-      const fileName = `Gia_Pha_${sanitizedSurname}_Toan_Bo_${dateForFile}.pdf`;
+      const fileName = `Gia_Pha_${sanitizedSurname}_Landscape_A3_${dateForFile}.pdf`;
 
       pdf.save(fileName);
     } catch (err: any) {
@@ -926,6 +1062,13 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     }
   };
 
+  /**
+   * Xuất ảnh JPG siêu sắc nét với modern-screenshot
+   * - Scale: 4 (tối thiểu 3.5, tối ưu 4.0)
+   * - Quality: 0.93
+   * - Ép font-family rõ ràng: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif
+   * - Giữ nguyên logic setupTreeForExport hiện tại
+   */
   const handleExportJpg = async () => {
     if (isExportingJpg) return;
     setIsExportingJpg(true);
@@ -947,22 +1090,35 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         throw new Error('Không tìm thấy vùng hiển thị cây phả hệ.');
       }
 
-      // 3. BỎ hẳn bước updateTree({ tree_position: 'fit' })
-      // Thiết lập kích thước thật và zoom thẻ ~200px
+      // 3. Thiết lập kích thước thật và zoom thẻ ~200px
       const { sourceW, sourceH, cardScale, transformStr, svgAttrTransform, restore } = setupTreeForExport(chartCont);
       layoutRestore = restore;
 
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // 4. Chụp bằng domToJpeg của modern-screenshot với scale: 2
+      // Tăng scale của modern-screenshot lên tối thiểu 3.5 (tốt nhất 4.0) với kiểm tra an toàn giới hạn canvas
+      const exportScale = Math.min(4.0, Math.max(3.5, Math.floor((16000 / sourceW) * 10) / 10));
+
+      // 4. Chụp bằng domToJpeg của modern-screenshot với scale: exportScale, quality: 0.93
       const imgData = await domToJpeg(chartCont, {
         width: sourceW,
         height: sourceH,
-        scale: 2,
-        quality: 0.88,
+        scale: exportScale,
+        quality: 0.93,
         backgroundColor: '#faf7f2',
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
+
+          // Ép font-family rõ ràng: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif
+          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
+          const styleTag = document.createElement('style');
+          styleTag.textContent = `
+            * {
+              font-family: ${standardFont} !important;
+            }
+          `;
+          cloned.prepend(styleTag);
+
           const clonedSvgView = cloned.querySelector('svg.main_svg .view') as SVGElement | null;
           if (clonedSvgView) {
             clonedSvgView.style.transform = '';
@@ -1007,9 +1163,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      console.log(`[handleExportJpg] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=2`);
+      console.log(`[handleExportJpg] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=${exportScale}`);
 
-      // 5. Tải file Gia_Pha_{Ho}.jpg về máy (chất lượng JPEG 0.88, dung lượng ~2–6MB, zoom đọc rõ từng tên)
+      // 5. Tải file Gia_Pha_{Ho}.jpg về máy (chất lượng JPEG 0.93 sắc nét)
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
       const fileName = `Gia_Pha_${sanitizedSurname}.jpg`;
 
@@ -1067,163 +1223,140 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-stone-100 pb-16">
+    <div className="min-h-screen bg-stone-100 text-stone-900 pb-20">
       
-      {/* Top Banner Toolbar */}
-      <div className="bg-[#24140e] text-amber-50 border-b border-amber-900/60 sticky top-16 sm:top-20 z-30 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3">
+      {/* Top Filter & Action Bar */}
+      <div className="bg-[#1c0e09] text-amber-50 border-b border-amber-900/60 sticky top-0 z-30 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           
-          {/* Main Top Bar: Title, Collapsible Toggle & View Switchers */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            
-            {/* Title & Slogan */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <TreePine className="w-5 h-5 text-amber-400 shrink-0" />
+              <div className="w-8 h-8 rounded-xl bg-amber-600/30 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                <TreePine className="w-4 h-4" />
+              </div>
               <div>
-                <h1 className="text-base sm:text-lg md:text-xl font-bold font-serif-clan text-white leading-tight">
-                  Sơ Đồ Phả Hệ — {clanInfo.clanSurname.toUpperCase()} TỘC
+                <h1 className="text-sm sm:text-base font-bold font-serif-clan text-amber-100 tracking-wide flex items-center gap-2">
+                  <span>Cây Phân Nhánh</span>
+                  <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-amber-900/60 text-amber-300 border border-amber-700/50 hidden sm:inline">
+                    {treeMembers.length} người
+                  </span>
                 </h1>
-                <p className="text-[11px] text-amber-200/70 hidden sm:block">
-                  Cập nhật đầy đủ Giới tính (Nam ♂ / Nữ ♀), Tuổi hiện tại & Hưởng thọ cho toàn gia tộc
-                </p>
               </div>
             </div>
 
-            {/* Actions: Toggle Filter Button & View Mode Switcher */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Toggle Stats & Filters Button */}
-              <button
-                type="button"
-                onClick={() => setIsFilterExpanded(prev => !prev)}
-                className="px-2.5 py-1.5 rounded-xl bg-stone-900/90 hover:bg-stone-800 active:bg-amber-900/40 text-amber-200 border border-amber-900/60 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                title={isFilterExpanded ? "Thu gọn thống kê và bộ lọc" : "Mở rộng thống kê và bộ lọc"}
-              >
-                <span>{isFilterExpanded ? '▲ Thu gọn bộ lọc' : '▼ Mở bộ lọc & Thống kê'}</span>
-              </button>
-
-              {/* PDF & JPG Export Buttons: ONLY shown when currentUserRole === 'admin' */}
+            {/* Quick Action Buttons */}
+            <div className="flex items-center gap-2">
               {isAdmin && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {/* JPG Button */}
-                  <button
-                    type="button"
-                    onClick={handleExportJpg}
-                    disabled={isExportingJpg || isExportingPdf}
-                    className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-900 hover:from-emerald-800 hover:to-teal-950 text-emerald-100 border border-emerald-500/60 text-xs font-bold shadow-md hover:shadow-lg transition-all hover:scale-105 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Tải ảnh JPG chất lượng cao (scale 2x, rõ nét từng tên khi phóng to) để xem và chia sẻ"
-                  >
-                    {isExportingJpg ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 text-emerald-300 animate-spin" />
-                        <span className="hidden sm:inline">Đang tạo JPG...</span>
-                        <span className="sm:hidden">JPG...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ImageIcon className="w-3.5 h-3.5 text-emerald-300" />
-                        <span>Tải ảnh JPG</span>
-                      </>
-                    )}
-                  </button>
-
-                  {/* PDF Button */}
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={handleExportPdf}
                     disabled={isExportingPdf || isExportingJpg}
-                    className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 text-amber-100 border border-amber-500/60 text-xs font-bold shadow-md hover:shadow-lg transition-all hover:scale-105 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Xuất toàn bộ cây phả hệ ra tệp PDF"
+                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-800 to-red-950 hover:from-red-700 hover:to-red-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer transition-all active:scale-95"
+                    title="Xuất file PDF khổ A3 ngang sắc nét, đọc rõ từng chữ trên Samsung S24 Ultra & Mobile"
                   >
                     {isExportingPdf ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 text-amber-300 animate-spin" />
-                        <span className="hidden sm:inline">Đang tạo PDF...</span>
-                        <span className="sm:hidden">PDF...</span>
-                      </>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
                     ) : (
-                      <>
-                        <FileDown className="w-3.5 h-3.5 text-amber-300" />
-                        <span>Xuất Bản PDF</span>
-                      </>
+                      <FileDown className="w-3.5 h-3.5 text-amber-300" />
                     )}
+                    <span>{isExportingPdf ? 'Đang xuất...' : 'Xuất PDF A3'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportJpg}
+                    disabled={isExportingPdf || isExportingJpg}
+                    className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 border border-amber-900/60 text-xs font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer transition-all active:scale-95"
+                    title="Tải ảnh JPG độ phân giải cao (scale 4.0, quality 0.93)"
+                  >
+                    {isExportingJpg ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                    ) : (
+                      <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                    )}
+                    <span>{isExportingJpg ? 'Đang xử lý...' : 'Tải Ảnh JPG'}</span>
                   </button>
                 </div>
               )}
-            </div>
 
+              {/* Mobile Filter Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setIsMobileFiltersOpen(prev => !prev)}
+                className="md:hidden px-2.5 py-1.5 rounded-xl bg-stone-800 border border-amber-900/50 text-amber-200 text-xs font-medium flex items-center gap-1 cursor-pointer"
+              >
+                <Filter className="w-3.5 h-3.5" />
+                <span>{isMobileFiltersOpen ? 'Ẩn bộ lọc' : 'Lọc & Phóng to'}</span>
+              </button>
+            </div>
           </div>
 
-          {/* Collapsible Section: Statistics & Full Filters */}
-          {isFilterExpanded && (
-            <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+          {/* Filter Bar Controls (Collapsed on mobile if toggled) */}
+          {isMobileFiltersOpen && (
+            <div className="pt-3 mt-2 border-t border-amber-900/40 text-xs space-y-2.5">
               
-              {/* Statistics Strip on Tree Page */}
-              <div className="mt-2.5 pt-2.5 border-t border-amber-950/70 flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-stone-300">
-                <div className="flex items-center gap-1.5 bg-stone-900/80 px-2.5 py-1 rounded-lg border border-amber-900/40">
-                  <Users className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Tổng: <strong className="text-white">{stats.total}</strong> thành viên</span>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-sky-950/60 text-sky-200 px-2.5 py-1 rounded-lg border border-sky-800/50">
-                  <span>Nam ♂:</span>
-                  <strong className="text-white">{stats.male} ({stats.malePercent}%)</strong>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-rose-950/60 text-rose-200 px-2.5 py-1 rounded-lg border border-rose-800/50">
-                  <span>Nữ ♀:</span>
-                  <strong className="text-white">{stats.female} ({stats.femalePercent}%)</strong>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-emerald-950/60 text-emerald-200 px-2.5 py-1 rounded-lg border border-emerald-800/50">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                  <span>Còn sống: <strong className="text-white">{stats.living}</strong></span>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-stone-900/80 text-stone-300 px-2.5 py-1 rounded-lg border border-amber-900/40">
-                  <Flame className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Tiền nhân: <strong className="text-white">{stats.deceased}</strong></span>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-stone-900/80 text-amber-300 px-2.5 py-1 rounded-lg border border-amber-900/40 ml-auto hidden lg:flex">
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>{maxGeneration} Thế hệ • {branches.length} Chi Phái</span>
-                </div>
-              </div>
-
-              {/* Filter & Control Bar */}
-              <div className="mt-2.5 pt-2.5 border-t border-amber-950/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+              {/* Row 1: Search & Branch & Gen Filters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 
-                {/* Search Box */}
-                <div className="relative flex-1 min-w-[170px] max-w-xs">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-400" />
+                {/* Search in Tree */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Tìm tên, chức vị, phối ngẫu..."
+                    placeholder="Tìm tên, tước vị, phối ngẫu..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-stone-900/90 border border-amber-900/50 text-amber-100 placeholder-stone-400 text-xs focus:outline-none focus:border-amber-400"
+                    className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-stone-900/90 border border-amber-900/50 text-amber-50 text-xs placeholder:text-stone-500 focus:outline-none focus:border-amber-500"
                   />
                   {searchQuery && (
                     <button
                       type="button"
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-2 text-stone-400 hover:text-white font-bold"
+                      className="absolute right-2 top-2 text-stone-400 hover:text-white"
                     >
                       ×
                     </button>
                   )}
                 </div>
 
-                {/* Quick Gender Filter (Tất cả, Nam ♂, Nữ ♀) */}
-                <div className="flex items-center gap-1 bg-stone-900/90 rounded-lg p-1 border border-amber-900/60">
-                  <span className="text-[11px] text-stone-400 px-1 font-semibold">Giới tính:</span>
+                {/* Branch Select */}
+                <div>
+                  <select
+                    value={selectedBranch}
+                    onChange={(e) => setSelectedBranch(e.target.value)}
+                    className="w-full py-1.5 px-2.5 rounded-xl bg-stone-900/90 border border-amber-900/50 text-amber-100 text-xs focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    <option value="all">Tất cả các Chi Nhánh</option>
+                    {branches.map(b => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Generation Depth Filter */}
+                <div>
+                  <select
+                    value={selectedGenFilter}
+                    onChange={(e) => setSelectedGenFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="w-full py-1.5 px-2.5 rounded-xl bg-stone-900/90 border border-amber-900/50 text-amber-100 text-xs focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    <option value="all">Tất cả thế hệ (1 - {maxGen})</option>
+                    {generationOptions.map(g => (
+                      <option key={g} value={g}>
+                        Đến Đời {g} {g === 1 ? '(Thủy Tổ)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Gender Filter */}
+                <div className="flex items-center rounded-xl bg-stone-900/80 p-0.5 border border-amber-900/50">
                   <button
                     type="button"
                     onClick={() => setGenderFilter('all')}
-                    className={`px-2.5 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                      genderFilter === 'all'
-                        ? 'bg-amber-700 text-white shadow-xs'
-                        : 'text-stone-300 hover:text-white'
+                    className={`flex-1 py-1 rounded-lg text-center font-semibold text-[11px] transition-all ${
+                      genderFilter === 'all' ? 'bg-amber-700 text-white shadow-xs' : 'text-stone-400 hover:text-white'
                     }`}
                   >
                     Tất cả
@@ -1231,72 +1364,40 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                   <button
                     type="button"
                     onClick={() => setGenderFilter('male')}
-                    className={`px-2.5 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                      genderFilter === 'male'
-                        ? 'bg-sky-600 text-white shadow-xs'
-                        : 'text-sky-300 hover:text-sky-100'
+                    className={`flex-1 py-1 rounded-lg text-center font-semibold text-[11px] transition-all ${
+                      genderFilter === 'male' ? 'bg-sky-600 text-white shadow-xs' : 'text-sky-400 hover:text-sky-200'
                     }`}
                   >
-                    <span>Nam ♂</span>
+                    Nam ♂
                   </button>
                   <button
                     type="button"
                     onClick={() => setGenderFilter('female')}
-                    className={`px-2.5 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                      genderFilter === 'female'
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'text-rose-300 hover:text-rose-100'
+                    className={`flex-1 py-1 rounded-lg text-center font-semibold text-[11px] transition-all ${
+                      genderFilter === 'female' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-400 hover:text-rose-200'
                     }`}
                   >
-                    <span>Nữ ♀</span>
+                    Nữ ♀
                   </button>
                 </div>
 
-                {/* Branch Filter */}
-                <div className="flex items-center gap-1.5">
-                  <Filter className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="text-stone-300">Chi:</span>
-                  <select
-                    value={selectedBranch}
-                    onChange={(e) => setSelectedBranch(e.target.value)}
-                    className="bg-stone-900 border border-amber-900/60 rounded-lg px-2.5 py-1 text-amber-100 text-xs focus:outline-none"
-                  >
-                    <option value="all">Tất cả Chi</option>
-                    {branches.map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
+              </div>
 
-                {/* Generation Filter */}
-                <div className="flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="text-stone-300">Đời:</span>
-                  <select
-                    value={selectedGenFilter}
-                    onChange={(e) => setSelectedGenFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                    className="bg-stone-900 border border-amber-900/60 rounded-lg px-2.5 py-1 text-amber-100 text-xs focus:outline-none"
-                  >
-                    <option value="all">Tất cả Đời (1 - {maxGeneration})</option>
-                    <option value={1}>Đời 1 (Thủy Tổ)</option>
-                    {Array.from({ length: Math.max(0, maxGeneration - 1) }, (_, i) => i + 2).map((gen) => (
-                      <option key={gen} value={gen}>Đến Đời {gen}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Toggle Spouses */}
-                <label className="flex items-center gap-1.5 cursor-pointer text-stone-300 hover:text-amber-200">
+              {/* Row 2: Toggles & Navigation View Controls */}
+              <div className="flex items-center justify-between gap-3 flex-wrap pt-1 text-[11px] text-stone-300">
+                
+                {/* Spouse Toggle */}
+                <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={showSpouses}
                     onChange={(e) => setShowSpouses(e.target.checked)}
-                    className="rounded text-amber-600 focus:ring-0"
+                    className="rounded border-amber-700 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 bg-stone-900"
                   />
-                  <span>Hiện Phối ngẫu</span>
+                  <span>Hiện phối ngẫu (Vợ / Chồng)</span>
                 </label>
 
-                {/* Zoom & Fit Toolbar in Filter Bar */}
+                {/* On-toolbar Canvas Navigation Controls (Giữ lại đầy đủ ở thanh bộ lọc) */}
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
@@ -1374,43 +1475,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             </div>
           )}
 
-          {/* Floating on-canvas Zoom & Fit Controls (bottom-right) */}
-          <div className="absolute bottom-4 right-4 z-20 flex items-center gap-1.5 bg-stone-900/90 backdrop-blur-xs p-1.5 rounded-2xl border border-amber-800/50 shadow-xl text-amber-100">
-            <button
-              type="button"
-              onClick={handleZoomIn}
-              className="w-8 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center justify-center text-amber-200 cursor-pointer transition-colors"
-              title="Phóng to"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleZoomOut}
-              className="w-8 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center justify-center text-amber-200 cursor-pointer transition-colors"
-              title="Thu nhỏ"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleFitTree}
-              className="px-2.5 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center gap-1 text-[11px] font-bold text-amber-300 cursor-pointer transition-colors"
-              title="Thu nhỏ để xem toàn bộ cây trong 1 màn hình"
-            >
-              <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
-              <span>Xem toàn bộ</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleCenterRoot}
-              className="px-2 h-8 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-amber-800 flex items-center gap-1 text-[11px] font-medium text-stone-300 hover:text-white cursor-pointer transition-colors"
-              title="Căn về Cụ Thủy Tổ"
-            >
-              <span>Thủy Tổ</span>
-            </button>
-          </div>
-
           {/* DOM Container for family-chart */}
           <div 
             id="familyTreeChartCont"
@@ -1426,4 +1490,3 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 };
 
 export default FamilyTreeViewer;
-
