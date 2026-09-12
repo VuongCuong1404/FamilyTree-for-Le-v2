@@ -457,10 +457,12 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   }, [treeMembers, showSpouses]);
 
   // Initial & reactive chart rendering
+  // Khôi phục chuẩn xác thư viện family-chart bằng f3.createChart
   useEffect(() => {
     if (!chartContainerRef.current) return;
+    const container = chartContainerRef.current;
     if (chartData.length === 0) {
-      chartContainerRef.current.innerHTML = `
+      container.innerHTML = `
         <div class="h-full min-h-[400px] flex items-center justify-center text-stone-400 font-serif-clan text-lg">
           Không có dữ liệu hiển thị theo bộ lọc đã chọn
         </div>
@@ -469,87 +471,87 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       return;
     }
 
-    chartContainerRef.current.innerHTML = '';
+    container.innerHTML = '';
 
     const rootMember = treeMembers.find(m => m.generation === 1) || treeMembers[0];
     const rootId = rootMember ? rootMember.id : chartData[0].id;
 
     try {
-      const f3Chart = (f3 as any).create({
-        cont: chartContainerRef.current,
-        data: chartData,
-        root_id: rootId,
-        node_separation: 280,
-        level_separation: 170,
-        card_dim: {
-          w: 280,
-          h: 145,
-          text_x: 0,
-          text_y: 0,
-          img_w: 0,
-          img_h: 0,
-          img_x: 0,
-          img_y: 0
-        },
-        custom_card: (d: any) => {
-          return createCardInnerHtml(d);
+      const chart = (f3 as any).createChart(container, chartData);
+      chart.setOrientationVertical();
+      chart.setCardXSpacing(310);
+      chart.setCardYSpacing(210);
+      chart.setSingleParentEmptyCard(false);
+      chart.setAncestryDepth(Math.max(10, maxGen + 2));
+      chart.setProgenyDepth(Math.max(10, maxGen + 2));
+
+      if (rootId && chart.store) {
+        chart.store.updateMainId(rootId);
+      }
+
+      const f3Card = chart.setCardHtml();
+      f3Card.setCardDim({ w: 280, h: 145 });
+      f3Card.setCardInnerHtmlCreator((d: any) => createCardInnerHtml(d));
+      f3Card.setOnCardClick((e: any, d: any) => {
+        const raw = d?.data?.data?.rawMember || d?.data?.rawMember;
+        if (raw) {
+          onSelectMember(raw);
         }
       });
 
-      chartInstanceRef.current = f3Chart;
+      // Fit tree ban đầu nhanh và mượt mà
+      chart.updateTree({ initial: true, tree_position: 'fit', transition_time: 0 });
+      chartInstanceRef.current = chart;
 
-      // Click card handler: select member
-      if (chartContainerRef.current) {
-        chartContainerRef.current.addEventListener('click', (e: MouseEvent) => {
-          const target = e.target as HTMLElement;
-          const cardEl = target.closest('.card_cont') || target.closest('.f3-card');
-          if (cardEl) {
-            const cardId = cardEl.getAttribute('data-id') || cardEl.getAttribute('id');
-            if (cardId) {
-              const cleanId = cardId.replace('card_', '').replace('node_', '');
-              const clickedMember = members.find(m => m.id === cleanId);
-              if (clickedMember) {
-                onSelectMember(clickedMember);
-              }
+      // Click card delegation fallback
+      container.addEventListener('click', (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const cardEl = target.closest('.card_cont') || target.closest('.card') || target.closest('.f3-card');
+        if (cardEl) {
+          const cardId = cardEl.getAttribute('data-id') || cardEl.getAttribute('id');
+          if (cardId) {
+            const cleanId = cardId.replace('card_', '').replace('node_', '');
+            const clickedMember = members.find(m => m.id === cleanId);
+            if (clickedMember) {
+              onSelectMember(clickedMember);
             }
           }
-        });
-      }
-
-      // Initial fit tree
-      setTimeout(() => {
-        if (chartInstanceRef.current) {
-          chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 400 });
         }
-      }, 200);
-
+      });
     } catch (err) {
       console.error('Lỗi khi render sơ đồ cây family-chart:', err);
     }
 
     return () => {
       chartInstanceRef.current = null;
+      if (container) {
+        container.innerHTML = '';
+      }
     };
-  }, [chartData]);
+  }, [chartData, maxGen, searchQuery, genderFilter]);
 
-  // Manual Zoom In
+  // Manual Zoom In (hỗ trợ cả f3.handlers.manualZoom và fallback)
   const handleZoomIn = () => {
-    if (chartInstanceRef.current) {
+    if (chartInstanceRef.current?.svg && (f3 as any).handlers?.manualZoom) {
+      (f3 as any).handlers.manualZoom({ amount: 1.25, svg: chartInstanceRef.current.svg, transition_time: 0 });
+    } else if (chartInstanceRef.current) {
       chartInstanceRef.current.updateTree({
         tree_position: 'custom',
         scale: (chartInstanceRef.current.store?.state?.scale || 1) * 1.25,
-        transition_time: 250
+        transition_time: 0
       });
     }
   };
 
   // Manual Zoom Out
   const handleZoomOut = () => {
-    if (chartInstanceRef.current) {
+    if (chartInstanceRef.current?.svg && (f3 as any).handlers?.manualZoom) {
+      (f3 as any).handlers.manualZoom({ amount: 0.8, svg: chartInstanceRef.current.svg, transition_time: 0 });
+    } else if (chartInstanceRef.current) {
       chartInstanceRef.current.updateTree({
         tree_position: 'custom',
         scale: Math.max(0.15, (chartInstanceRef.current.store?.state?.scale || 1) * 0.8),
-        transition_time: 250
+        transition_time: 0
       });
     }
   };
@@ -557,7 +559,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   // Fit Entire Tree
   const handleFitTree = () => {
     if (chartInstanceRef.current) {
-      chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 400 });
+      chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
     }
   };
 
@@ -567,13 +569,15 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     const rootMember = treeMembers.find(m => m.generation === 1) || treeMembers[0];
     if (rootMember) {
       try {
+        if (chartInstanceRef.current.store) {
+          chartInstanceRef.current.store.updateMainId(rootMember.id);
+        }
         chartInstanceRef.current.updateTree({
           tree_position: 'main_to_middle',
-          root_id: rootMember.id,
-          transition_time: 400
+          transition_time: 0
         });
       } catch {
-        chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 400 });
+        chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
       }
     }
   };
@@ -643,16 +647,16 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       maxY = Math.max(chartCont.scrollHeight || 1000, 1000);
     }
 
-    // 2. Tính tỉ lệ co giãn thẻ: Thẻ gốc 280px, mục tiêu ~200px (180–220px) để chữ to rõ
-    const targetCardWidth = 200;
-    let cardScale = targetCardWidth / 280; // ~0.714
+    // 2. Tính tỉ lệ co giãn thẻ: Thẻ gốc 280px, mục tiêu ~240px để chữ to rõ
+    const targetCardWidth = 240;
+    let cardScale = targetCardWidth / 280; // ~0.857
     const margin = 80;
     const unscaledW = (maxX - minX) + margin * 2;
     const unscaledH = (maxY - minY) + margin * 2;
 
-    // Giới hạn an toàn để chiều rộng canvas khi nhân scale không vượt quá 14000px
-    if (unscaledW * cardScale * 2 > 14000) {
-      cardScale = 14000 / (unscaledW * 2);
+    // Giới hạn an toàn để chiều rộng canvas khi nhân scale không vượt quá 20000px
+    if (unscaledW * cardScale * 4 > 20000) {
+      cardScale = 20000 / (unscaledW * 4);
     }
     if (cardScale < 0.4) cardScale = 0.4;
 
@@ -950,9 +954,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         );
       };
 
-      // Tính số phân đoạn ngang: nếu cây rộng (> 1600px), tự động chia thành các trang chi tiết phóng to
-      const isWideTree = sourceW > 1600;
-      const numSegments = isWideTree ? Math.min(5, Math.max(2, Math.ceil(sourceW / 1400))) : 1;
+      // Tính số phân đoạn ngang: nếu cây rộng (> 1200px), tự động chia thành các trang chi tiết phóng to
+      const isWideTree = sourceW > 1200 || members.length > 8;
+      const numSegments = isWideTree ? Math.min(6, Math.max(2, Math.ceil(sourceW / 1100))) : 1;
       const totalPages = isWideTree ? numSegments + 1 : 1;
 
       // ================= TRANG 1: TOÀN CẢNH CÂY PHẢ HỆ =================

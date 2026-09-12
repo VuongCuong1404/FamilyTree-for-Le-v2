@@ -210,24 +210,33 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   }, [filtersExpanded, showScrollSearch]);
 
   const handleScrollToSearch = () => {
+    // Mở rộng filter nếu đang thu gọn
     setFiltersExpanded(true);
-    // Chờ render DOM form tìm kiếm mở rộng
+
+    // Cuộn mượt lên đầu trang
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // Chờ DOM cập nhật và render ô input
     setTimeout(() => {
       if (searchInputRef.current) {
-        // Cuộn ô input vào tầm nhìn với block: 'start' và scroll-margin-top: 90px để không bị header che
+        // Cuộn ô input vào tầm nhìn với block: 'start' và scroll-margin-top: 100px để không bị header che
         searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        searchInputRef.current.focus({ preventScroll: true });
+        try {
+          searchInputRef.current.focus({ preventScroll: true });
+        } catch {
+          searchInputRef.current.focus();
+        }
 
-        // Đảm bảo trên mobile khi bàn phím ảo trượt lên, ô input vẫn giữ nguyên trong vùng nhìn thấy
+        // Đảm bảo trên mobile khi bàn phím ảo trượt lên, ô input vẫn giữ nguyên trong tầm nhìn
         setTimeout(() => {
-          if (searchInputRef.current && document.activeElement === searchInputRef.current) {
+          if (searchInputRef.current) {
             searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
-        }, 320);
+        }, 350);
       } else if (stickyBarRef.current) {
         stickyBarRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
-    }, 100);
+    }, 120);
   };
 
   const handleOpenFilters = () => {
@@ -235,9 +244,13 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
     setTimeout(() => {
       if (searchInputRef.current) {
         searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        searchInputRef.current.focus({ preventScroll: true });
+        try {
+          searchInputRef.current.focus({ preventScroll: true });
+        } catch {
+          searchInputRef.current.focus();
+        }
       }
-    }, 100);
+    }, 120);
   };
 
   const handleResetFilters = useCallback(() => {
@@ -724,8 +737,8 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
           ) : (
             /* Full Search & Filter Controls Card (Solid white, border rõ ràng, shadow) */
             <div 
-              style={{ scrollMarginTop: '90px' }}
-              className="scroll-mt-[90px] bg-white rounded-2xl sm:rounded-3xl border border-stone-300 p-4 sm:p-5 shadow-md space-y-3 transition-all"
+              style={{ scrollMarginTop: '100px' }}
+              className="scroll-mt-[100px] bg-white rounded-2xl sm:rounded-3xl border border-stone-300 p-4 sm:p-5 shadow-md space-y-3 transition-all"
             >
               {/* Main Search Input & Nút Thu Gọn */}
               <div className="flex items-center gap-2">
@@ -737,8 +750,8 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                     placeholder="Nhập tên thành viên, danh xưng, số điện thoại, nơi ở, hoặc nghề nghiệp để tìm kiếm..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{ scrollMarginTop: '90px' }}
-                    className="scroll-mt-[90px] w-full pl-12 pr-12 py-3 rounded-2xl bg-stone-50 border border-stone-300 text-stone-900 text-sm focus:outline-none focus:border-amber-600 focus:bg-white transition-all shadow-inner"
+                    style={{ scrollMarginTop: '100px' }}
+                    className="scroll-mt-[100px] w-full pl-12 pr-12 py-3 rounded-2xl bg-stone-50 border border-stone-300 text-stone-900 text-sm focus:outline-none focus:border-amber-600 focus:bg-white transition-all shadow-inner"
                   />
                   {searchTerm && (
                     <button
