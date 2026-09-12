@@ -854,13 +854,11 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // Tính toán scale capture cao: Tối thiểu 3.5, tốt nhất 4.0 với ngưỡng kích thước canvas an toàn
+      // Tính toán scale capture: Ưu tiên scale 3.5 (hoặc 3.0 nếu canvas vượt ngưỡng bộ nhớ an toàn)
       const maxCanvasDim = typeof window !== 'undefined' && window.innerWidth < 768 ? 8192 : 14000;
-      let exportScale = 4.0;
-      if (sourceW * exportScale > maxCanvasDim) {
-        exportScale = Math.max(2.5, Math.floor((maxCanvasDim / sourceW) * 10) / 10);
-      } else if (sourceW * 3.5 > maxCanvasDim) {
-        exportScale = 3.5;
+      let exportScale = 3.5;
+      if (sourceW * exportScale > maxCanvasDim || sourceH * exportScale > maxCanvasDim) {
+        exportScale = Math.max(3.0, Math.floor((maxCanvasDim / Math.max(sourceW, sourceH)) * 10) / 10);
       }
 
       // 4. Chụp toàn cảnh cây với modern-screenshot
@@ -868,7 +866,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         width: sourceW,
         height: sourceH,
         scale: exportScale,
-        quality: 0.93,
+        quality: 0.92,
         backgroundColor: '#faf7f2',
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
@@ -978,12 +976,31 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         }
       });
 
-      // Khổ giấy tiêu chuẩn A3 Landscape (1190.55 x 841.89 pt)
-      const pageW = 1190.55;
-      const pageH = 841.89;
-      const marginPt = 24;
-      const headerHeightPt = 58;
-      const footerHeightPt = 24;
+      // Khổ giấy tiêu chuẩn A3 Landscape (1190.55 x 841.89 pt) làm mốc chuẩn
+      const basePageW = 1190.55;
+      const basePageH = 841.89;
+      const marginPt = 20;
+      const headerHeightPt = 54;
+      const footerHeightPt = 16;
+      const baseAvailW = basePageW - (marginPt * 2);
+      const baseAvailH = basePageH - headerHeightPt - footerHeightPt - (marginPt * 2);
+
+      // Tối ưu kích thước trang PDF khổ ngang (Landscape) ưu tiên 1 trang trọn vẹn:
+      // Tự động khớp theo tỉ lệ thực của cây để lấp đầy khung trang, hạn chế tối đa viền trống thừa,
+      // giúp các thẻ thành viên và chữ đạt kích cỡ lớn, rõ nét nhất khi xem trên điện thoại (Samsung, iPhone) & máy tính bảng.
+      let pageW = basePageW;
+      let pageH = basePageH;
+      const treeAspect = sourceW / sourceH;
+      const baseAspect = baseAvailW / baseAvailH;
+
+      if (treeAspect > baseAspect) {
+        // Cây trải rộng theo chiều ngang: mở rộng pageW theo tỉ lệ cây để chiều cao cây đạt tối đa vùng hiển thị
+        pageW = Math.round(baseAvailH * treeAspect + (marginPt * 2));
+      } else {
+        // Cây vuông hoặc nhiều tầng theo chiều dọc: mở rộng pageH (vẫn đảm bảo khổ ngang landscape pageW >= pageH)
+        pageH = Math.min(pageW, Math.round(baseAvailW / treeAspect + headerHeightPt + footerHeightPt + (marginPt * 2)));
+      }
+
       const availW = pageW - (marginPt * 2);
       const availH = pageH - headerHeightPt - footerHeightPt - (marginPt * 2);
 
@@ -1026,14 +1043,14 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         // Đã xóa toàn bộ dòng ghi chú / footer / trial / demo ở cuối trang
       };
 
-      // Tính số phân đoạn ngang: nếu cây rộng (> 1200px), tự động chia thành các trang chi tiết phóng to
-      const isWideTree = sourceW > 1200 || members.length > 8;
-      const numSegments = isWideTree ? Math.min(6, Math.max(2, Math.ceil(sourceW / 1100))) : 1;
-      const totalPages = isWideTree ? numSegments + 1 : 1;
+      // Ưu tiên tạo PDF 1 trang landscape: Chỉ chia nhiều trang nếu cây quá đồ sộ (> 4000px bề rộng và hơn 80 người)
+      const isColossalTree = sourceW > 4000 && members.length > 80;
+      const numSegments = isColossalTree ? Math.min(5, Math.max(2, Math.ceil(sourceW / 1400))) : 1;
+      const totalPages = isColossalTree ? numSegments + 1 : 1;
 
       // ================= TRANG 1: TOÀN CẢNH CÂY PHẢ HỆ =================
       drawPdfHeader(
-        `GIA PHẢ NỘI TỘC - ${clanUpper} TỘC · ${isWideTree ? 'TỔNG QUAN TOÀN BỘ' : 'TOÀN CẢNH PHẢ HỆ'}`,
+        `GIA PHẢ NỘI TỘC - ${clanUpper} TỘC · ${totalPages > 1 ? 'TỔNG QUAN TOÀN BỘ' : 'TOÀN CẢNH PHẢ HỆ'}`,
         `Ngày xuất bản: ${formattedDate}  |  Quy mô: ${members.length} thành viên · ${maxGen} thế hệ  |  "${clanInfo.subTitle || 'Uống nước nhớ nguồn - Vạn thuở lưu danh'}"`
       );
 
@@ -1057,8 +1074,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       drawPdfFooter(1, totalPages);
 
-      // ================= CÁC TRANG TIẾP THEO: PHÂN ĐOẠN CHI TIẾT PHÓNG ĐẠI (ĐỌC RÕ Ở 100-150%) =================
-      if (isWideTree && numSegments > 1) {
+      // ================= CÁC TRANG TIẾP THEO: PHÂN ĐOẠN CHI TIẾT NẾU CÂY QUÁ ĐỒ SỘ =================
+      if (isColossalTree && numSegments > 1) {
         const overlapPx = 160; // Vùng gối đầu 160px để không bị cắt giữa các thẻ thành viên
         const segW = Math.round((sourceW + (numSegments - 1) * overlapPx) / numSegments);
 
@@ -1097,7 +1114,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             );
           }
 
-          const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.93);
+          const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
 
           drawPdfHeader(
             `GIA PHẢ NỘI TỘC - ${clanUpper} TỘC · CHI TIẾT PHÂN ĐOẠN ${i + 1}/${numSegments}`,
@@ -1129,7 +1146,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       // Lưu file PDF hoàn chỉnh
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
       const dateForFile = `${day}_${month}_${year}`;
-      const fileName = `Gia_Pha_${sanitizedSurname}_Landscape_A3_${dateForFile}.pdf`;
+      const fileName = `Gia_Pha_${sanitizedSurname}_Landscape_${dateForFile}.pdf`;
 
       pdf.save(fileName);
     } catch (err: any) {

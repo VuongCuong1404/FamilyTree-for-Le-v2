@@ -11,7 +11,6 @@ import {
   Award, 
   ChevronRight, 
   ExternalLink, 
-  MessageCircle, 
   Download, 
   Printer, 
   Users, 
@@ -597,14 +596,6 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                 <span>Xuất File CSV / Excel</span>
               </button>
             )}
-
-            <button
-              onClick={onOpenZalo}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-900/30"
-            >
-              <MessageCircle className="w-4 h-4" />
-              <span>Nhóm Zalo</span>
-            </button>
           </div>
         </div>
 
