@@ -823,8 +823,14 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // Tính toán scale capture cao: Tối thiểu 3.5, tốt nhất 4.0
-      const exportScale = Math.min(4.0, Math.max(3.5, Math.floor((16000 / sourceW) * 10) / 10));
+      // Tính toán scale capture cao: Tối thiểu 3.5, tốt nhất 4.0 với ngưỡng kích thước canvas an toàn
+      const maxCanvasDim = typeof window !== 'undefined' && window.innerWidth < 768 ? 8192 : 14000;
+      let exportScale = 4.0;
+      if (sourceW * exportScale > maxCanvasDim) {
+        exportScale = Math.max(2.5, Math.floor((maxCanvasDim / sourceW) * 10) / 10);
+      } else if (sourceW * 3.5 > maxCanvasDim) {
+        exportScale = 3.5;
+      }
 
       // 4. Chụp toàn cảnh cây với modern-screenshot
       const imgData = await domToJpeg(chartCont, {
@@ -890,12 +896,55 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      // Tải ảnh vào Image object để trích xuất và phân trang
+      if (!imgData || typeof imgData !== 'string' || !imgData.startsWith('data:image')) {
+        throw new Error('Dữ liệu hình ảnh tạo ra không hợp lệ hoặc bị rỗng.');
+      }
+
+      // Tải ảnh vào Image object an toàn để trích xuất và phân trang (xử lý triệt để lỗi [object Event])
       const img = new Image();
       await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = (e) => reject(new Error('Lỗi load ảnh sơ đồ: ' + e));
+        let settled = false;
+
+        const cleanup = () => {
+          img.onload = null;
+          img.onerror = null;
+        };
+
+        img.onload = () => {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            resolve();
+          }
+        };
+
+        img.onerror = (event: Event | string) => {
+          if (!settled) {
+            // Kiểm tra nếu ảnh vẫn nạp thành công kích thước
+            if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+              settled = true;
+              cleanup();
+              resolve();
+              return;
+            }
+            settled = true;
+            cleanup();
+            const eventType = typeof event === 'object' && event !== null && 'type' in event ? (event as Event).type : String(event);
+            reject(new Error(`Không thể nạp dữ liệu ảnh sơ đồ (sự kiện: ${eventType}). Vui lòng thử lại.`));
+          }
+        };
+
+        // Gán src sau khi đã đăng ký event listeners
         img.src = imgData;
+
+        // Nếu ảnh đã hoàn tất ngay trong cache
+        if (img.complete && img.naturalWidth > 0) {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            resolve();
+          }
+        }
       });
 
       // Khổ giấy tiêu chuẩn A3 Landscape (1190.55 x 841.89 pt)
@@ -998,10 +1047,15 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
           const endX = Math.min(sourceW, startX + segW);
           const actualSegW = endX - startX;
 
+          const actualImgW = img.naturalWidth || Math.round(sourceW * exportScale);
+          const actualImgH = img.naturalHeight || Math.round(sourceH * exportScale);
+          const realScaleX = actualImgW / sourceW;
+          const realScaleY = actualImgH / sourceH;
+
           // Tạo Canvas cắt phân đoạn ảnh độ phân giải cao
           const sliceCanvas = document.createElement('canvas');
-          sliceCanvas.width = actualSegW * exportScale;
-          sliceCanvas.height = sourceH * exportScale;
+          sliceCanvas.width = Math.round(actualSegW * realScaleX);
+          sliceCanvas.height = Math.round(sourceH * realScaleY);
           const ctx = sliceCanvas.getContext('2d');
 
           if (ctx) {
@@ -1009,10 +1063,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
             ctx.drawImage(
               img,
-              startX * exportScale,
+              Math.round(startX * realScaleX),
               0,
-              actualSegW * exportScale,
-              sourceH * exportScale,
+              Math.round(actualSegW * realScaleX),
+              actualImgH,
               0,
               0,
               sliceCanvas.width,
@@ -1101,7 +1155,13 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       await new Promise((resolve) => setTimeout(resolve, 150));
 
       // Tăng scale của modern-screenshot lên tối thiểu 3.5 (tốt nhất 4.0) với kiểm tra an toàn giới hạn canvas
-      const exportScale = Math.min(4.0, Math.max(3.5, Math.floor((16000 / sourceW) * 10) / 10));
+      const maxCanvasDim = typeof window !== 'undefined' && window.innerWidth < 768 ? 8192 : 14000;
+      let exportScale = 4.0;
+      if (sourceW * exportScale > maxCanvasDim) {
+        exportScale = Math.max(2.5, Math.floor((maxCanvasDim / sourceW) * 10) / 10);
+      } else if (sourceW * 3.5 > maxCanvasDim) {
+        exportScale = 3.5;
+      }
 
       // 4. Chụp bằng domToJpeg của modern-screenshot với scale: exportScale, quality: 0.93
       const imgData = await domToJpeg(chartCont, {
@@ -1248,41 +1308,39 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               </div>
             </div>
 
-            {/* Quick Action Buttons */}
+            {/* Quick Action Buttons: Xuất Bản PDF & Tải Ảnh JPG */}
             <div className="flex items-center gap-2">
-              {isAdmin && (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleExportPdf}
-                    disabled={isExportingPdf || isExportingJpg}
-                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-800 to-red-950 hover:from-red-700 hover:to-red-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer transition-all active:scale-95"
-                    title="Xuất file PDF khổ A3 ngang sắc nét, đọc rõ từng chữ trên Samsung S24 Ultra & Mobile"
-                  >
-                    {isExportingPdf ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
-                    ) : (
-                      <FileDown className="w-3.5 h-3.5 text-amber-300" />
-                    )}
-                    <span>{isExportingPdf ? 'Đang xuất...' : 'Xuất PDF A3'}</span>
-                  </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleExportPdf}
+                  disabled={isExportingPdf || isExportingJpg}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-800 to-red-950 hover:from-red-700 hover:to-red-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer transition-all active:scale-95"
+                  title="Xuất file PDF khổ A3 ngang sắc nét, đọc rõ từng chữ trên Samsung S24 Ultra & Mobile"
+                >
+                  {isExportingPdf ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                  ) : (
+                    <FileDown className="w-3.5 h-3.5 text-amber-300" />
+                  )}
+                  <span>{isExportingPdf ? 'Đang xuất...' : 'Xuất Bản PDF'}</span>
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={handleExportJpg}
-                    disabled={isExportingPdf || isExportingJpg}
-                    className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 border border-amber-900/60 text-xs font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer transition-all active:scale-95"
-                    title="Tải ảnh JPG độ phân giải cao (scale 4.0, quality 0.93)"
-                  >
-                    {isExportingJpg ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                    ) : (
-                      <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
-                    )}
-                    <span>{isExportingJpg ? 'Đang xử lý...' : 'Tải Ảnh JPG'}</span>
-                  </button>
-                </div>
-              )}
+                <button
+                  type="button"
+                  onClick={handleExportJpg}
+                  disabled={isExportingPdf || isExportingJpg}
+                  className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 border border-amber-900/60 text-xs font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer transition-all active:scale-95"
+                  title="Tải ảnh JPG độ phân giải cao"
+                >
+                  {isExportingJpg ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                  ) : (
+                    <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                  )}
+                  <span>{isExportingJpg ? 'Đang xử lý...' : 'Tải Ảnh JPG'}</span>
+                </button>
+              </div>
 
               {/* Mobile Filter Toggle Button */}
               <button

@@ -210,16 +210,12 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   }, [filtersExpanded, showScrollSearch]);
 
   const handleScrollToSearch = () => {
-    // Mở rộng filter nếu đang thu gọn
+    // Khi bấm nút kính lúp → setFiltersExpanded(true)
     setFiltersExpanded(true);
 
-    // Cuộn mượt lên đầu trang
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-
-    // Chờ DOM cập nhật và render ô input
+    // Sau đó scrollIntoView ô input với { behavior: 'smooth', block: 'start' }
     setTimeout(() => {
       if (searchInputRef.current) {
-        // Cuộn ô input vào tầm nhìn với block: 'start' và scroll-margin-top: 100px để không bị header che
         searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
         try {
           searchInputRef.current.focus({ preventScroll: true });
@@ -227,16 +223,14 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
           searchInputRef.current.focus();
         }
 
-        // Đảm bảo trên mobile khi bàn phím ảo trượt lên, ô input vẫn giữ nguyên trong tầm nhìn
+        // Đảm bảo khi bàn phím ảo mở trên mobile, ô input vẫn nhìn thấy rõ
         setTimeout(() => {
           if (searchInputRef.current) {
             searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
-        }, 350);
-      } else if (stickyBarRef.current) {
-        stickyBarRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 300);
       }
-    }, 120);
+    }, 60);
   };
 
   const handleOpenFilters = () => {
@@ -250,7 +244,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
           searchInputRef.current.focus();
         }
       }
-    }, 120);
+    }, 60);
   };
 
   const handleResetFilters = useCallback(() => {
@@ -487,7 +481,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `danh_ba_gia_pha_${clanInfo.clanSurname}_toc.csv`);
+    link.setAttribute("download", `danh_ba_thanh_vien.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -510,7 +504,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
               Vui lòng đăng nhập để tra cứu danh bạ con cháu
             </h2>
             <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
-              Danh bạ liên lạc, số điện thoại và địa chỉ của các thế hệ trong dòng họ {clanInfo.clanSurname} được bảo mật cho thành viên nội tộc.
+              Danh bạ liên lạc, số điện thoại và địa chỉ của các thế hệ được bảo mật cho thành viên nội tộc.
             </p>
           </div>
 
@@ -537,10 +531,10 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400 font-serif-clan">
-              <span>Hệ Thống Tra Cứu Danh Bạ Huyết Thống</span>
+              <span>Hệ Thống Tra Cứu Danh Bạ</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold font-serif-clan text-white mt-1">
-              Danh Bạ Con Cháu — {clanInfo.name}
+              Danh Bạ Con Cháu
             </h1>
             <p className="text-xs sm:text-sm text-stone-300 mt-1">
               Tra cứu đầy đủ thông tin: Giới tính (Nam ♂ / Nữ ♀), Tuổi hiện tại / Hưởng thọ, Số điện thoại và Ngành chi.
@@ -582,7 +576,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
               <button
                 onClick={exportCSV}
                 className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 border border-amber-900/60 text-xs font-semibold flex items-center gap-1.5 shadow-sm cursor-pointer transition-all hover:scale-105"
-                title="Tải bảng danh bạ dòng họ về máy tính dạng tệp CSV / Excel"
+                title="Tải bảng danh bạ về máy tính dạng tệp CSV / Excel"
               >
                 <Download className="w-4 h-4 text-amber-400" />
                 <span>Xuất File CSV / Excel</span>
@@ -594,7 +588,7 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
               className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-900/30"
             >
               <MessageCircle className="w-4 h-4" />
-              <span>Zalo Dòng Họ</span>
+              <span>Nhóm Zalo</span>
             </button>
           </div>
         </div>
@@ -737,8 +731,8 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
           ) : (
             /* Full Search & Filter Controls Card (Solid white, border rõ ràng, shadow) */
             <div 
-              style={{ scrollMarginTop: '100px' }}
-              className="scroll-mt-[100px] bg-white rounded-2xl sm:rounded-3xl border border-stone-300 p-4 sm:p-5 shadow-md space-y-3 transition-all"
+              style={{ scrollMarginTop: '90px' }}
+              className="scroll-mt-[90px] bg-white rounded-2xl sm:rounded-3xl border border-stone-300 p-4 sm:p-5 shadow-md space-y-3 transition-all"
             >
               {/* Main Search Input & Nút Thu Gọn */}
               <div className="flex items-center gap-2">
@@ -750,8 +744,8 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                     placeholder="Nhập tên thành viên, danh xưng, số điện thoại, nơi ở, hoặc nghề nghiệp để tìm kiếm..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{ scrollMarginTop: '100px' }}
-                    className="scroll-mt-[100px] w-full pl-12 pr-12 py-3 rounded-2xl bg-stone-50 border border-stone-300 text-stone-900 text-sm focus:outline-none focus:border-amber-600 focus:bg-white transition-all shadow-inner"
+                    style={{ scrollMarginTop: '90px' }}
+                    className="scroll-mt-[90px] w-full pl-12 pr-12 py-3 rounded-2xl bg-stone-50 border border-stone-300 text-stone-900 text-sm focus:outline-none focus:border-amber-600 focus:bg-white transition-all shadow-inner"
                   />
                   {searchTerm && (
                     <button
