@@ -373,30 +373,30 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     // Secondary label "Mẹ: {tên}" for children with clear 11px font size
     let motherHtml = '';
     if (actualMotherName) {
-      motherHtml = `<div class="text-[11px] font-semibold text-rose-800 bg-rose-50/90 border border-rose-200/80 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 max-w-full truncate" title="Thân mẫu: ${escapeHtml(actualMotherName)}">
+      motherHtml = `<div class="text-[11px] font-semibold text-rose-800 bg-rose-50/90 border border-rose-200/80 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 max-w-full" title="Thân mẫu: ${escapeHtml(actualMotherName)}">
           <span class="text-rose-500 font-bold shrink-0">Mẹ:</span>
-          <span class="truncate font-medium text-stone-800">${escapeHtml(actualMotherName)}</span>
+          <span class="font-medium text-stone-800 break-words">${escapeHtml(actualMotherName)}</span>
         </div>`;
     }
 
     const spouseHtml = showSpouses && formattedSpouses
-      ? `<div class="mt-2 pt-1.5 border-t border-stone-200/70 text-xs flex items-center gap-1 text-stone-700 bg-stone-50/90 -mx-3.5 -mb-3.5 p-2 rounded-b-2xl">
-          <span class="text-rose-500 font-bold shrink-0 text-xs">♥</span>
-          <span class="text-[11px] text-stone-500 font-medium shrink-0">Phối ngẫu:</span>
-          <span class="font-semibold text-stone-800 text-xs truncate" title="${escapeHtml(formattedSpouses)}">
+      ? `<div class="mt-2 pt-1.5 border-t border-stone-200/70 text-xs flex items-start gap-1 text-stone-700 bg-stone-50/90 -mx-3.5 -mb-3.5 p-2 rounded-b-2xl">
+          <span class="text-rose-500 font-bold shrink-0 text-xs mt-0.5">♥</span>
+          <span class="text-[11px] text-stone-500 font-medium shrink-0 mt-0.5">Phối ngẫu:</span>
+          <span class="font-semibold text-stone-800 text-xs break-words flex-1 min-w-0" title="${escapeHtml(formattedSpouses)}">
             ${escapeHtml(formattedSpouses)}
           </span>
         </div>`
       : '';
 
     const lunarHtml = !member.isAlive && member.lunarDeathDate
-      ? `<div class="text-[11.5px] text-red-800 font-semibold mt-0.5 flex items-center gap-1">
+      ? `<div class="text-[11.5px] text-red-800 font-semibold mt-0.5 flex items-start gap-1 break-words">
           <span>📅 Kỵ nhật: ${escapeHtml(member.lunarDeathDate)}</span>
         </div>`
       : '';
 
     const occupHtml = member.isAlive && (member.occupation || member.address)
-      ? `<div class="text-[11px] text-stone-600 truncate mt-0.5">
+      ? `<div class="text-[11px] text-stone-600 mt-0.5 break-words">
           ${escapeHtml(member.occupation || member.address || '')}
         </div>`
       : '';
@@ -416,7 +416,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               <span>${genderVisual.symbol}</span>
               <span>${member.gender === 'male' ? 'Nam' : 'Nữ'}</span>
             </span>
-            <span class="text-[11px] font-semibold text-stone-600 truncate max-w-[90px]">
+            <span class="text-[11px] font-semibold text-stone-600">
               ${escapeHtml(member.branch || '')}
             </span>
             ${isHighlighted ? `
@@ -450,7 +450,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1 flex-wrap">
-              <h4 class="font-bold text-base font-serif-clan ${isHighlighted ? 'text-amber-950 font-black underline decoration-amber-500 decoration-2' : 'text-stone-950'} truncate tracking-tight">
+              <h4 class="font-bold text-base font-serif-clan ${isHighlighted ? 'text-amber-950 font-black underline decoration-amber-500 decoration-2' : 'text-stone-950'} tracking-tight break-words">
                 ${escapeHtml(member.fullName)}
               </h4>
               ${member.title ? `
@@ -1147,7 +1147,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
 
-          // 1. Ép style toàn cục cho mọi phần tử
+          // 1. Ép style toàn cục mạnh mẽ cho mọi phần tử
           const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
           const styleTag = document.createElement('style');
           styleTag.textContent = `
@@ -1156,22 +1156,26 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               -webkit-font-smoothing: antialiased !important;
               -moz-osx-font-smoothing: grayscale !important;
               text-rendering: optimizeLegibility !important;
-              line-height: 1.35 !important;
               box-sizing: border-box !important;
             }
             .card_cont, .card, .f3-card {
               box-sizing: border-box !important;
               overflow: visible !important;
             }
-            /* Gỡ triệt để mọi thứ gây cắt chữ */
+            /* Gỡ triệt để mọi thứ gây cắt chữ / vỡ chữ / chồng chữ */
             .truncate, [class*="truncate"] {
               overflow: visible !important;
               text-overflow: clip !important;
               white-space: normal !important;
               max-width: none !important;
+              min-width: 0 !important;
             }
             h1, h2, h3, h4, h5, h6, span, div, p, a, strong, b, em, small {
               line-height: 1.35 !important;
+              overflow: visible !important;
+              text-overflow: clip !important;
+              white-space: normal !important;
+              max-width: none !important;
             }
           `;
           cloned.prepend(styleTag);
@@ -1204,13 +1208,21 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.display = '';
           });
 
-          // 2. Gỡ triệt để mọi thứ gây cắt chữ & bảo toàn khoảng cách padding, gap
+          // 2. Gỡ hoàn toàn class truncate, ép overflow: visible, white-space: normal, max-width: none trên mọi phần tử
           cloned.querySelectorAll('*').forEach((el) => {
             const htmlEl = el as HTMLElement;
 
             // Xóa class truncate trên tất cả phần tử
-            if (htmlEl.classList && htmlEl.classList.contains('truncate')) {
-              htmlEl.classList.remove('truncate');
+            if (htmlEl.classList) {
+              if (htmlEl.classList.contains('truncate')) {
+                htmlEl.classList.remove('truncate');
+              }
+              // Gỡ bất kỳ class max-w-* nào hạn chế chiều rộng text
+              Array.from(htmlEl.classList).forEach((cls) => {
+                if (cls.startsWith('max-w-') || cls === 'truncate') {
+                  htmlEl.classList.remove(cls);
+                }
+              });
             }
 
             const tagName = htmlEl.tagName.toLowerCase();
@@ -1224,6 +1236,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 htmlEl.style.maxWidth = 'none';
                 htmlEl.style.minWidth = '0';
                 htmlEl.style.lineHeight = '1.35';
+                htmlEl.style.fontFamily = standardFont;
               }
             }
 
@@ -1232,19 +1245,19 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               htmlEl.style.maxWidth = 'none';
             }
 
-            // 3. Đảm bảo các thẻ thông tin nhỏ (Kỵ nhật, Mẹ, Phối ngẫu, tuổi…) giữ đúng khoảng cách và không bị co
+            // 3. Đảm bảo các thẻ card và thông tin con (Kỵ nhật, Mẹ, Phối ngẫu, tuổi…) giữ đúng kích thước, không bị co ép
             const isCard = htmlEl.classList && (htmlEl.classList.contains('card_cont') || htmlEl.classList.contains('card') || htmlEl.classList.contains('f3-card'));
             if (isCard) {
               htmlEl.style.boxSizing = 'border-box';
               htmlEl.style.overflow = 'visible';
             }
 
-            // Bảo toàn padding và gap cho các khối thông tin phụ bên trong card
+            // Bảo toàn layout flex cho các hàng chứa thông tin
             const classStr = htmlEl.getAttribute('class') || '';
             if (classStr.includes('flex') || classStr.includes('inline-flex')) {
-              // Giữ nguyên layout flex, không cho flex-shrink bóp nghẹt text
               if (!htmlEl.classList.contains('card_cont')) {
                 htmlEl.style.overflow = 'visible';
+                htmlEl.style.flexShrink = '0';
               }
             }
           });
@@ -1316,7 +1329,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
 
-          // 1. Ép style toàn cục cho mọi phần tử
+          // 1. Ép style toàn cục mạnh mẽ cho mọi phần tử
           const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
           const styleTag = document.createElement('style');
           styleTag.textContent = `
@@ -1325,22 +1338,26 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               -webkit-font-smoothing: antialiased !important;
               -moz-osx-font-smoothing: grayscale !important;
               text-rendering: optimizeLegibility !important;
-              line-height: 1.35 !important;
               box-sizing: border-box !important;
             }
             .card_cont, .card, .f3-card {
               box-sizing: border-box !important;
               overflow: visible !important;
             }
-            /* Gỡ triệt để mọi thứ gây cắt chữ */
+            /* Gỡ triệt để mọi thứ gây cắt chữ / vỡ chữ / chồng chữ */
             .truncate, [class*="truncate"] {
               overflow: visible !important;
               text-overflow: clip !important;
               white-space: normal !important;
               max-width: none !important;
+              min-width: 0 !important;
             }
             h1, h2, h3, h4, h5, h6, span, div, p, a, strong, b, em, small {
               line-height: 1.35 !important;
+              overflow: visible !important;
+              text-overflow: clip !important;
+              white-space: normal !important;
+              max-width: none !important;
             }
           `;
           cloned.prepend(styleTag);
@@ -1373,13 +1390,21 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.display = '';
           });
 
-          // 2. Gỡ triệt để mọi thứ gây cắt chữ & bảo toàn khoảng cách padding, gap
+          // 2. Gỡ hoàn toàn class truncate, ép overflow: visible, white-space: normal, max-width: none trên mọi phần tử
           cloned.querySelectorAll('*').forEach((el) => {
             const htmlEl = el as HTMLElement;
 
             // Xóa class truncate trên tất cả phần tử
-            if (htmlEl.classList && htmlEl.classList.contains('truncate')) {
-              htmlEl.classList.remove('truncate');
+            if (htmlEl.classList) {
+              if (htmlEl.classList.contains('truncate')) {
+                htmlEl.classList.remove('truncate');
+              }
+              // Gỡ bất kỳ class max-w-* nào hạn chế chiều rộng text
+              Array.from(htmlEl.classList).forEach((cls) => {
+                if (cls.startsWith('max-w-') || cls === 'truncate') {
+                  htmlEl.classList.remove(cls);
+                }
+              });
             }
 
             const tagName = htmlEl.tagName.toLowerCase();
@@ -1393,6 +1418,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 htmlEl.style.maxWidth = 'none';
                 htmlEl.style.minWidth = '0';
                 htmlEl.style.lineHeight = '1.35';
+                htmlEl.style.fontFamily = standardFont;
               }
             }
 
@@ -1401,17 +1427,19 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               htmlEl.style.maxWidth = 'none';
             }
 
-            // 3. Đảm bảo các thẻ card và thông tin con giữ đúng layout
+            // 3. Đảm bảo các thẻ card và thông tin con (Kỵ nhật, Mẹ, Phối ngẫu, tuổi…) giữ đúng kích thước, không bị co ép
             const isCard = htmlEl.classList && (htmlEl.classList.contains('card_cont') || htmlEl.classList.contains('card') || htmlEl.classList.contains('f3-card'));
             if (isCard) {
               htmlEl.style.boxSizing = 'border-box';
               htmlEl.style.overflow = 'visible';
             }
 
+            // Bảo toàn layout flex cho các hàng chứa thông tin
             const classStr = htmlEl.getAttribute('class') || '';
             if (classStr.includes('flex') || classStr.includes('inline-flex')) {
               if (!htmlEl.classList.contains('card_cont')) {
                 htmlEl.style.overflow = 'visible';
+                htmlEl.style.flexShrink = '0';
               }
             }
           });
