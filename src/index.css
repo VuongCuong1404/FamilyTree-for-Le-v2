@@ -1,16 +1,69 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   Self-hosted Fonts for Clan Family Tree (Noto Serif & Plus Jakarta Sans)
+   Đảm bảo chữ tiếng Việt sắc nét, đồng nhất khi xem trực tiếp và khi xuất
+   ========================================================================== */
+
+@font-face {
+  font-family: 'Clan Noto Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/NotoSerif-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Clan Noto Serif';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/NotoSerif-SemiBold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Clan Noto Serif';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/NotoSerif-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Clan Jakarta';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/PlusJakartaSans-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Clan Jakarta';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/PlusJakartaSans-SemiBold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Clan Jakarta';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/PlusJakartaSans-Bold.woff2') format('woff2');
+}
+
 @layer base {
   body {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: 'Clan Jakarta', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
 
   h1, h2, h3, .font-serif-clan {
-    font-family: 'Noto Serif', 'Times New Roman', Georgia, serif;
+    font-family: 'Clan Noto Serif', 'Noto Serif', 'Times New Roman', Georgia, serif;
   }
 
   .font-display-title {
-    font-family: 'Cinzel', 'Noto Serif', serif;
+    font-family: 'Cinzel', 'Clan Noto Serif', 'Noto Serif', serif;
   }
 }
 

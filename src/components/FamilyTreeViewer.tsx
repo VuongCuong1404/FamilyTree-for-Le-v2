@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { ClanMember, ClanInfo, UserProfile, Role } from '../types';
 import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder, removeVietnameseAccents } from '../utils/genealogyUtils';
+import { EMBEDDED_FONTS_CSS } from '../utils/embeddedFonts';
 
 interface FamilyTreeViewerProps {
   members: ClanMember[];
@@ -891,6 +892,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       const { sourceW, sourceH, restore } = setupTreeForExport(chartCont);
       layoutRestore = restore;
 
+      // Đảm bảo font chữ (Clan Noto Serif, Clan Jakarta, v.v.) đã nạp hoàn chỉnh vào browser trước khi render
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // 4. Chụp toàn cảnh cây với modern-screenshot
@@ -901,12 +906,37 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
 
-          // Ép font-family rõ ràng chuẩn tiếng Việt
-          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
+          // Thay vì ép font toàn cục (* { font-family: system-ui !important }), áp dụng style tinh tế cho card và thẻ bên trong
           const styleTag = document.createElement('style');
           styleTag.textContent = `
-            * {
-              font-family: ${standardFont} !important;
+            ${EMBEDDED_FONTS_CSS}
+            .f3-card, .card_cont, .card, .card_cont * {
+              box-sizing: border-box !important;
+              -webkit-font-smoothing: antialiased !important;
+              -moz-osx-font-smoothing: grayscale !important;
+              text-rendering: optimizeLegibility !important;
+              font-family: 'Clan Jakarta', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+            }
+            .font-serif-clan, .card_cont h4, .f3-card h4, [class*="font-serif-clan"] {
+              font-family: 'Clan Noto Serif', 'Noto Serif', 'Times New Roman', serif !important;
+            }
+            .f3-card, .card_cont, .card {
+              overflow: visible !important;
+            }
+            .truncate, [class*="truncate"] {
+              overflow: visible !important;
+              text-overflow: clip !important;
+              white-space: normal !important;
+              max-width: none !important;
+              min-width: 0 !important;
+            }
+            .card_cont h1, .card_cont h2, .card_cont h3, .card_cont h4, .card_cont h5, .card_cont h6,
+            .card_cont span, .card_cont div, .card_cont p, .card_cont a, .card_cont strong, .card_cont b, .card_cont em, .card_cont small {
+              line-height: 1.35 !important;
+              overflow: visible !important;
+              text-overflow: clip !important;
+              white-space: normal !important;
+              max-width: none !important;
             }
           `;
           cloned.prepend(styleTag);
@@ -1121,6 +1151,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       const { sourceW, sourceH, svgAttrTransform, restore } = setupTreeForExport(chartCont);
       layoutRestore = restore;
 
+      // Đảm bảo font chữ (Clan Noto Serif, Clan Jakarta, v.v.) đã nạp hoàn chỉnh vào browser trước khi render
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // 4. Ưu tiên exportScale = 4.0. Chỉ giảm scale khi thật sự vượt giới hạn canvas (desktop: 16000px, mobile: 8192px)
@@ -1147,19 +1181,21 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
 
-          // 1. Ép style toàn cục mạnh mẽ cho mọi phần tử
-          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
+          // 1. Áp dụng style scoped đúng chuẩn, tôn trọng font Serif cho tên và Jakarta/Sans cho thông tin
           const styleTag = document.createElement('style');
           styleTag.textContent = `
-            * {
-              font-family: ${standardFont} !important;
+            ${EMBEDDED_FONTS_CSS}
+            .f3-card, .card_cont, .card, .card_cont * {
+              box-sizing: border-box !important;
               -webkit-font-smoothing: antialiased !important;
               -moz-osx-font-smoothing: grayscale !important;
               text-rendering: optimizeLegibility !important;
-              box-sizing: border-box !important;
+              font-family: 'Clan Jakarta', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+            }
+            .font-serif-clan, .card_cont h4, .f3-card h4, [class*="font-serif-clan"] {
+              font-family: 'Clan Noto Serif', 'Noto Serif', 'Times New Roman', serif !important;
             }
             .card_cont, .card, .f3-card {
-              box-sizing: border-box !important;
               overflow: visible !important;
             }
             /* Gỡ triệt để mọi thứ gây cắt chữ / vỡ chữ / chồng chữ */
@@ -1170,7 +1206,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               max-width: none !important;
               min-width: 0 !important;
             }
-            h1, h2, h3, h4, h5, h6, span, div, p, a, strong, b, em, small {
+            .card_cont h1, .card_cont h2, .card_cont h3, .card_cont h4, .card_cont h5, .card_cont h6,
+            .card_cont span, .card_cont div, .card_cont p, .card_cont a, .card_cont strong, .card_cont b, .card_cont em, .card_cont small {
               line-height: 1.35 !important;
               overflow: visible !important;
               text-overflow: clip !important;
@@ -1236,7 +1273,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 htmlEl.style.maxWidth = 'none';
                 htmlEl.style.minWidth = '0';
                 htmlEl.style.lineHeight = '1.35';
-                htmlEl.style.fontFamily = standardFont;
               }
             }
 
@@ -1319,6 +1355,10 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       const { sourceW, sourceH, svgAttrTransform, restore } = setupTreeForExport(chartCont);
       layoutRestore = restore;
 
+      // Đảm bảo font chữ (Clan Noto Serif, Clan Jakarta, v.v.) đã nạp hoàn chỉnh vào browser trước khi render
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // 4. Chuyển đổi DOM sang SVG Vector bằng domToSvg của modern-screenshot
@@ -1329,19 +1369,21 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
 
-          // 1. Ép style toàn cục mạnh mẽ cho mọi phần tử
-          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
+          // 1. Áp dụng style scoped đúng chuẩn, tôn trọng font Serif cho tên và Jakarta/Sans cho thông tin
           const styleTag = document.createElement('style');
           styleTag.textContent = `
-            * {
-              font-family: ${standardFont} !important;
+            ${EMBEDDED_FONTS_CSS}
+            .f3-card, .card_cont, .card, .card_cont * {
+              box-sizing: border-box !important;
               -webkit-font-smoothing: antialiased !important;
               -moz-osx-font-smoothing: grayscale !important;
               text-rendering: optimizeLegibility !important;
-              box-sizing: border-box !important;
+              font-family: 'Clan Jakarta', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+            }
+            .font-serif-clan, .card_cont h4, .f3-card h4, [class*="font-serif-clan"] {
+              font-family: 'Clan Noto Serif', 'Noto Serif', 'Times New Roman', serif !important;
             }
             .card_cont, .card, .f3-card {
-              box-sizing: border-box !important;
               overflow: visible !important;
             }
             /* Gỡ triệt để mọi thứ gây cắt chữ / vỡ chữ / chồng chữ */
@@ -1352,7 +1394,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               max-width: none !important;
               min-width: 0 !important;
             }
-            h1, h2, h3, h4, h5, h6, span, div, p, a, strong, b, em, small {
+            .card_cont h1, .card_cont h2, .card_cont h3, .card_cont h4, .card_cont h5, .card_cont h6,
+            .card_cont span, .card_cont div, .card_cont p, .card_cont a, .card_cont strong, .card_cont b, .card_cont em, .card_cont small {
               line-height: 1.35 !important;
               overflow: visible !important;
               text-overflow: clip !important;
@@ -1418,7 +1461,6 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 htmlEl.style.maxWidth = 'none';
                 htmlEl.style.minWidth = '0';
                 htmlEl.style.lineHeight = '1.35';
-                htmlEl.style.fontFamily = standardFont;
               }
             }
 
