@@ -642,29 +642,223 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   };
 
   /**
-   * Chuẩn bị layout cây ở chế độ hiển thị toàn bộ (fit tree) để xuất ảnh/PDF:
-   * Chuyển cây về "fit", lấy kích thước tự nhiên từ getBoundingClientRect/scrollWidth/scrollHeight,
-   * không can thiệp ép style width/height/transform thủ công.
+   * Chuẩn bị layout cây mở rộng đầy đủ và tỉ lệ thẻ lớn (targetCardWidth 220-240px) để xuất ảnh sắc nét:
+   * Quét tọa độ min/max của toàn bộ cây, thiết lập kích thước thật sourceW x sourceH đủ lớn,
+   * áp dụng transform độc lập không phụ thuộc vào trạng thái zoom thu nhỏ hiện tại của màn hình.
    */
   const setupTreeForExport = (chartCont: HTMLElement) => {
-    // 1. Chuyển cây về chế độ "Xem toàn bộ" (fit) của family-chart
-    if (chartInstanceRef.current) {
-      chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
+    // 1. Quét tọa độ min/max của tất cả thẻ và đường nối cây
+    const chartStoreTree = (chartInstanceRef.current as any)?.store?.getTree?.();
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    if (chartStoreTree?.data && Array.isArray(chartStoreTree.data) && chartStoreTree.data.length > 0) {
+      for (const datum of chartStoreTree.data) {
+        if (typeof datum.x === 'number' && typeof datum.y === 'number') {
+          if (datum.x < minX) minX = datum.x;
+          if (datum.x + 280 > maxX) maxX = datum.x + 280;
+          if (datum.y < minY) minY = datum.y;
+          if (datum.y + 145 > maxY) maxY = datum.y + 145;
+        }
+      }
     }
 
-    // 2. Lấy kích thước tự nhiên thật của container
-    const rect = chartCont.getBoundingClientRect();
-    const sourceW = Math.max(1200, Math.round(rect.width || chartCont.scrollWidth || 1200));
-    const sourceH = Math.max(800, Math.round(rect.height || chartCont.scrollHeight || 800));
+    // Quét thêm các thẻ DOM .card_cont
+    const cardElements = chartCont.querySelectorAll('.card_cont');
+    cardElements.forEach((el) => {
+      const htmlEl = el as HTMLElement;
+      const transform = htmlEl.style.transform;
+      const match = /translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(transform);
+      if (match) {
+        const x = parseFloat(match[1]);
+        const y = parseFloat(match[2]);
+        if (!isNaN(x) && !isNaN(y)) {
+          if (x < minX) minX = x;
+          if (x + 280 > maxX) maxX = x + 280;
+          if (y < minY) minY = y;
+          if (y + 145 > maxY) maxY = y + 145;
+        }
+      }
+    });
 
-    // Không sửa đổi CSS width/transform gì trên DOM, restore là no-op an toàn
+    // Quét đường nối SVG .links_view
+    const linksView = chartCont.querySelector('svg.main_svg .links_view') as SVGGElement | null;
+    if (linksView && typeof linksView.getBBox === 'function') {
+      try {
+        const bbox = linksView.getBBox();
+        if (bbox.width > 0 && bbox.height > 0) {
+          if (bbox.x < minX) minX = bbox.x;
+          if (bbox.x + bbox.width > maxX) maxX = bbox.x + bbox.width;
+          if (bbox.y < minY) minY = bbox.y;
+          if (bbox.y + bbox.height > maxY) maxY = bbox.y + bbox.height;
+        }
+      } catch {
+        // Bỏ qua nếu không lấy được BBox
+      }
+    }
+
+    // Fallback nếu không tính được tọa độ
+    if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
+      minX = 0;
+      maxX = Math.max(chartCont.scrollWidth || 2400, 2400);
+      minY = 0;
+      maxY = Math.max(chartCont.scrollHeight || 1600, 1600);
+    }
+
+    // 2. Tính tỉ lệ co giãn thẻ: Thẻ gốc 280px, mục tiêu tối thiểu 220–240px để chữ to rõ ràng
+    const maxCanvasLimit = 14000;
+    const margin = 100;
+    const unscaledW = (maxX - minX) + margin * 2;
+    const unscaledH = (maxY - minY) + margin * 2;
+
+    let targetCardWidth = 240;
+    let cardScale = targetCardWidth / 280; // ~0.857
+
+    // Nếu kích thước khi nhân scale 3.5 vượt ngưỡng an toàn 14000px, hạ dần targetCardWidth xuống tối thiểu 220px
+    if (unscaledW * cardScale * 3.5 > maxCanvasLimit) {
+      targetCardWidth = Math.max(220, Math.floor((maxCanvasLimit / (unscaledW * 3.5)) * 280));
+      cardScale = targetCardWidth / 280;
+    }
+
+    // Đảm bảo sourceW và sourceH đủ lớn (không để ảnh chỉ khoảng 1400px chiều rộng)
+    const sourceW = Math.max(2400, Math.round(unscaledW * cardScale));
+    const sourceH = Math.max(1600, Math.round(unscaledH * cardScale));
+
+    const treeW = Math.round(unscaledW * cardScale);
+    const treeH = Math.round(unscaledH * cardScale);
+    const offsetX = sourceW > treeW ? Math.round((sourceW - treeW) / 2) : 0;
+    const offsetY = sourceH > treeH ? Math.round((sourceH - treeH) / 2) : 0;
+
+    const tx = Math.round(margin * cardScale - minX * cardScale) + offsetX;
+    const ty = Math.round(margin * cardScale - minY * cardScale) + offsetY;
+
+    // 3. Lưu lại các style ban đầu để hoàn tác sau khi chụp
+    const origContWidth = chartCont.style.width;
+    const origContHeight = chartCont.style.height;
+    const origContMaxWidth = chartCont.style.maxWidth;
+    const origContMaxHeight = chartCont.style.maxHeight;
+    const origContOverflow = chartCont.style.overflow;
+
+    const f3Canvas = chartCont.querySelector('#f3Canvas') as HTMLElement | null;
+    const origF3Width = f3Canvas?.style.width || '';
+    const origF3Height = f3Canvas?.style.height || '';
+    const origF3Overflow = f3Canvas?.style.overflow || '';
+
+    const htmlSvg = chartCont.querySelector('#htmlSvg') as HTMLElement | null;
+    const origHtmlSvgWidth = htmlSvg?.style.width || '';
+    const origHtmlSvgHeight = htmlSvg?.style.height || '';
+
+    const svgElem = chartCont.querySelector('svg.main_svg') as SVGElement | null;
+    const origSvgWidth = svgElem?.style.width || '';
+    const origSvgHeight = svgElem?.style.height || '';
+    const origSvgAttrW = svgElem?.getAttribute('width');
+    const origSvgAttrH = svgElem?.getAttribute('height');
+
+    const svgRect = svgElem?.querySelector('rect');
+    const origRectW = svgRect?.getAttribute('width');
+    const origRectH = svgRect?.getAttribute('height');
+
+    const svgView = chartCont.querySelector('svg.main_svg .view') as SVGGElement | null;
+    const htmlView = chartCont.querySelector('#htmlSvg .cards_view') as HTMLElement | null;
+    const origSvgTransform = svgView?.style.transform || '';
+    const origSvgAttrTransform = svgView?.getAttribute('transform') || '';
+    const origHtmlTransform = htmlView?.style.transform || '';
+
+    // 4. Áp dụng kích thước mở rộng tạm thời cho container và các lớp hiển thị (không bị bó hẹp trong khung xem)
+    chartCont.style.width = `${sourceW}px`;
+    chartCont.style.height = `${sourceH}px`;
+    chartCont.style.maxWidth = 'none';
+    chartCont.style.maxHeight = 'none';
+    chartCont.style.overflow = 'visible';
+
+    if (f3Canvas) {
+      f3Canvas.style.width = `${sourceW}px`;
+      f3Canvas.style.height = `${sourceH}px`;
+      f3Canvas.style.overflow = 'visible';
+    }
+
+    if (htmlSvg) {
+      htmlSvg.style.width = `${sourceW}px`;
+      htmlSvg.style.height = `${sourceH}px`;
+    }
+
+    if (svgElem) {
+      svgElem.style.width = `${sourceW}px`;
+      svgElem.style.height = `${sourceH}px`;
+      svgElem.style.overflow = 'visible';
+      svgElem.setAttribute('width', String(sourceW));
+      svgElem.setAttribute('height', String(sourceH));
+      svgElem.setAttribute('overflow', 'visible');
+      if (svgRect) {
+        svgRect.setAttribute('width', String(sourceW));
+        svgRect.setAttribute('height', String(sourceH));
+      }
+    }
+
+    const transformStr = `translate(${tx}px, ${ty}px) scale(${cardScale})`;
+    const svgAttrTransform = `translate(${tx}, ${ty}) scale(${cardScale})`;
+
+    if (svgView) {
+      svgView.style.transform = '';
+      svgView.setAttribute('transform', svgAttrTransform);
+    }
+    if (htmlView) {
+      htmlView.style.transform = transformStr;
+    }
+
+    // Hàm restore khôi phục trạng thái giao diện ban đầu
     const restore = () => {
+      chartCont.style.width = origContWidth;
+      chartCont.style.height = origContHeight;
+      chartCont.style.maxWidth = origContMaxWidth;
+      chartCont.style.maxHeight = origContMaxHeight;
+      chartCont.style.overflow = origContOverflow;
+
+      if (f3Canvas) {
+        f3Canvas.style.width = origF3Width;
+        f3Canvas.style.height = origF3Height;
+        f3Canvas.style.overflow = origF3Overflow;
+      }
+
+      if (htmlSvg) {
+        htmlSvg.style.width = origHtmlSvgWidth;
+        htmlSvg.style.height = origHtmlSvgHeight;
+      }
+
+      if (svgElem) {
+        svgElem.style.width = origSvgWidth;
+        svgElem.style.height = origSvgHeight;
+        svgElem.style.overflow = '';
+        svgElem.removeAttribute('overflow');
+        if (origSvgAttrW) svgElem.setAttribute('width', origSvgAttrW);
+        else svgElem.removeAttribute('width');
+        if (origSvgAttrH) svgElem.setAttribute('height', origSvgAttrH);
+        else svgElem.removeAttribute('height');
+        if (svgRect) {
+          if (origRectW) svgRect.setAttribute('width', origRectW);
+          if (origRectH) svgRect.setAttribute('height', origRectH);
+        }
+      }
+
+      if (svgView) {
+        svgView.style.transform = origSvgTransform;
+        if (origSvgAttrTransform) {
+          svgView.setAttribute('transform', origSvgAttrTransform);
+        } else {
+          svgView.removeAttribute('transform');
+        }
+      }
+      if (htmlView) htmlView.style.transform = origHtmlTransform;
+
+      // Fit lại cây hiển thị trên màn hình cho người dùng
       if (chartInstanceRef.current) {
         chartInstanceRef.current.updateTree({ tree_position: 'fit', transition_time: 0 });
       }
     };
 
-    return { sourceW, sourceH, restore };
+    return { sourceW, sourceH, cardScale, transformStr, svgAttrTransform, restore };
   };
 
   /**
@@ -894,19 +1088,18 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
   /**
    * Xuất ảnh JPG siêu sắc nét với modern-screenshot
-   * - Reset về chế độ "Xem toàn bộ" (fit tree)
-   * - Sử dụng kích thước DOM thật tự nhiên, không ép width/height hay transform thủ công
-   * - pixelRatio / scale: 4 (hoặc tương đương) để tăng độ phân giải
-   * - Quality: 0.95
-   * - Ép font-family cứng: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", sans-serif !important;
-   * - Ép line-height: 1.35 !important;
-   * - Ép -webkit-font-smoothing: antialiased; và text-rendering: optimizeLegibility;
-   * - Gỡ hoàn toàn mọi class truncate, text-overflow, max-width, overflow: hidden trên các phần tử chứa text
-   * - Đảm bảo thẻ card giữ đúng kích thước, padding, khoảng cách như trên app.
+   * - Mở rộng cây đầy đủ (targetCardWidth 220–240px, sourceW & sourceH đủ lớn)
+   * - Không bị ảnh hưởng bởi transform zoom hiện tại của người dùng
+   * - Ép exportScale tối thiểu 3.5, ưu tiên 4.0 (chỉ giảm khi vượt giới hạn 14000px)
+   * - quality: 0.95
+   * - backgroundColor: '#faf7f2'
+   * - Ép font rõ ràng + antialiased + gỡ bỏ truncate/overflow
    */
   const handleExportJpg = async () => {
     if (isExportingJpg) return;
     setIsExportingJpg(true);
+
+    let layoutRestore: (() => void) | null = null;
 
     try {
       // 1. Tự động chuyển cây về chế độ hiện toàn bộ và xóa các bộ lọc
@@ -923,29 +1116,44 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         throw new Error('Không tìm thấy vùng hiển thị cây phả hệ.');
       }
 
-      // 3. Đưa cây về trạng thái fit và lấy kích thước tự nhiên thật của cây
-      setupTreeForExport(chartCont);
+      // 3. Thiết lập layout mở rộng đầy đủ cho cây (không bị co nhỏ theo khung màn hình)
+      const { sourceW, sourceH, svgAttrTransform, restore } = setupTreeForExport(chartCont);
+      layoutRestore = restore;
+
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // 4. Chụp trực tiếp chartCont bằng domToJpeg với pixelRatio / scale: 4 và quality: 0.95
-      // Thư viện tự đo kích thước theo DOM thật
+      // 4. Ép exportScale tối thiểu 3.5, ưu tiên 4.0. Chỉ giảm khi thật sự vượt giới hạn canvas an toàn (14000px)
+      const maxCanvasLimit = 14000;
+      let exportScale = 4.0;
+      const maxDim = Math.max(sourceW, sourceH);
+
+      if (maxDim * exportScale > maxCanvasLimit) {
+        exportScale = Math.max(3.5, Math.floor((maxCanvasLimit / maxDim) * 10) / 10);
+        if (maxDim * exportScale > maxCanvasLimit) {
+          exportScale = Math.floor((maxCanvasLimit / maxDim) * 10) / 10;
+        }
+      }
+
+      // 5. Chụp bằng domToJpeg của modern-screenshot với scale: exportScale, quality: 0.95, backgroundColor: '#faf7f2'
       const imgData = await domToJpeg(chartCont, {
-        scale: 4,
+        width: sourceW,
+        height: sourceH,
+        scale: exportScale,
         quality: 0.95,
         backgroundColor: '#faf7f2',
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
 
-          // 1. Ép font-family chuẩn, line-height, text-rendering và font-smoothing rõ ràng
-          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", sans-serif';
+          // 1. Ép font rõ ràng + antialiased
+          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
           const styleTag = document.createElement('style');
           styleTag.textContent = `
             * {
               font-family: ${standardFont} !important;
-              box-sizing: border-box !important;
               -webkit-font-smoothing: antialiased !important;
               -moz-osx-font-smoothing: grayscale !important;
               text-rendering: optimizeLegibility !important;
+              box-sizing: border-box !important;
             }
             .card_cont, .card, .f3-card {
               box-sizing: border-box !important;
@@ -955,6 +1163,17 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             }
           `;
           cloned.prepend(styleTag);
+
+          const clonedSvgView = cloned.querySelector('svg.main_svg .view') as SVGElement | null;
+          if (clonedSvgView) {
+            clonedSvgView.style.transform = '';
+            clonedSvgView.setAttribute('transform', svgAttrTransform);
+          }
+          const clonedSvgElem = cloned.querySelector('svg.main_svg') as SVGElement | null;
+          if (clonedSvgElem) {
+            clonedSvgElem.style.overflow = 'visible';
+            clonedSvgElem.setAttribute('overflow', 'visible');
+          }
 
           // Ép style đường nối nhánh (SVG links)
           cloned.querySelectorAll(
@@ -973,7 +1192,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.display = '';
           });
 
-          // 2. Gỡ hoàn toàn class truncate, text-overflow, max-width, overflow:hidden trên tất cả phần tử chứa text
+          // 2. Gỡ hết truncate, max-width, overflow:hidden trên text
           cloned.querySelectorAll('*').forEach((el) => {
             const htmlEl = el as HTMLElement;
 
@@ -1009,9 +1228,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      console.log(`[handleExportJpg] modern-screenshot export completed with scale: 4, quality: 0.95`);
+      console.log(`[handleExportJpg] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=${exportScale}, quality=0.95`);
 
-      // 5. Tải file Gia_Pha_{Ho}.jpg về máy (chất lượng JPEG 0.95 sắc nét)
+      // 6. Tải file Gia_Pha_{Ho}.jpg về máy (chất lượng JPEG 0.95 sắc nét)
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
       const fileName = `Gia_Pha_${sanitizedSurname}.jpg`;
 
@@ -1025,6 +1244,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       console.error('Lỗi khi tải ảnh JPG phả hệ:', err);
       alert('Không thể tải ảnh JPG: ' + (err.message || 'Vui lòng thử lại.'));
     } finally {
+      if (layoutRestore) {
+        layoutRestore();
+      }
       setIsExportingJpg(false);
     }
   };
