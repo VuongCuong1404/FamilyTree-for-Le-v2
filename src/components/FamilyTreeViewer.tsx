@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as f3 from 'family-chart';
 import 'family-chart/styles/family-chart.css';
 import { jsPDF } from 'jspdf';
-import { domToJpeg } from 'modern-screenshot';
+import { domToJpeg, domToSvg } from 'modern-screenshot';
 import { 
   TreePine, 
   Search, 
@@ -20,7 +20,8 @@ import {
   LogIn,
   FileDown,
   Loader2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  FileCode
 } from 'lucide-react';
 import { ClanMember, ClanInfo, UserProfile, Role } from '../types';
 import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder, removeVietnameseAccents } from '../utils/genealogyUtils';
@@ -210,6 +211,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [isExportingJpg, setIsExportingJpg] = useState<boolean>(false);
+  const [isExportingSvg, setIsExportingSvg] = useState<boolean>(false);
 
   // Dynamic max generation
   const maxGen = useMemo(() => {
@@ -1272,6 +1274,173 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     }
   };
 
+  /**
+   * Xuất ảnh SVG Vector chuẩn chất lượng cao
+   * - Tái sử dụng logic setupTreeForExport để mở rộng cây đầy đủ
+   * - Giữ nguyên độ sắc nét vector tuyệt đối (phóng to vô hạn không vỡ nét)
+   * - Ép font và style đồng nhất, gỡ bỏ truncate/overflow
+   * - Độc lập và không ảnh hưởng performance khi xem bình thường
+   */
+  const handleExportSvg = async () => {
+    if (isExportingSvg) return;
+    setIsExportingSvg(true);
+
+    let layoutRestore: (() => void) | null = null;
+
+    try {
+      // 1. Tự động chuyển cây về chế độ hiện toàn bộ và xóa các bộ lọc
+      setSelectedBranch('all');
+      setSelectedGenFilter('all');
+      setSearchQuery('');
+      setGenderFilter('all');
+
+      // 2. Chờ React re-render và DOM tree cập nhật đầy đủ các thẻ
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const chartCont = chartContainerRef.current;
+      if (!chartCont) {
+        throw new Error('Không tìm thấy vùng hiển thị cây phả hệ.');
+      }
+
+      // 3. Tái sử dụng setupTreeForExport hiện có để mở rộng cây đầy đủ
+      const { sourceW, sourceH, svgAttrTransform, restore } = setupTreeForExport(chartCont);
+      layoutRestore = restore;
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // 4. Chuyển đổi DOM sang SVG Vector bằng domToSvg của modern-screenshot
+      const svgDataUrl = await domToSvg(chartCont, {
+        width: sourceW,
+        height: sourceH,
+        backgroundColor: '#faf7f2',
+        onCloneNode: (cloned) => {
+          if (!cloned || !(cloned instanceof Element)) return;
+
+          // 1. Ép style toàn cục cho mọi phần tử
+          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
+          const styleTag = document.createElement('style');
+          styleTag.textContent = `
+            * {
+              font-family: ${standardFont} !important;
+              -webkit-font-smoothing: antialiased !important;
+              -moz-osx-font-smoothing: grayscale !important;
+              text-rendering: optimizeLegibility !important;
+              line-height: 1.35 !important;
+              box-sizing: border-box !important;
+            }
+            .card_cont, .card, .f3-card {
+              box-sizing: border-box !important;
+              overflow: visible !important;
+            }
+            /* Gỡ triệt để mọi thứ gây cắt chữ */
+            .truncate, [class*="truncate"] {
+              overflow: visible !important;
+              text-overflow: clip !important;
+              white-space: normal !important;
+              max-width: none !important;
+            }
+            h1, h2, h3, h4, h5, h6, span, div, p, a, strong, b, em, small {
+              line-height: 1.35 !important;
+            }
+          `;
+          cloned.prepend(styleTag);
+
+          const clonedSvgView = cloned.querySelector('svg.main_svg .view') as SVGElement | null;
+          if (clonedSvgView) {
+            clonedSvgView.style.transform = '';
+            clonedSvgView.setAttribute('transform', svgAttrTransform);
+          }
+          const clonedSvgElem = cloned.querySelector('svg.main_svg') as SVGElement | null;
+          if (clonedSvgElem) {
+            clonedSvgElem.style.overflow = 'visible';
+            clonedSvgElem.setAttribute('overflow', 'visible');
+          }
+
+          // Ép style đường nối nhánh (SVG links)
+          cloned.querySelectorAll(
+            'svg .link, svg .links_view path, svg .links_view line, svg path.link'
+          ).forEach((el) => {
+            const node = el as SVGElement;
+            node.setAttribute('stroke', '#92400e');
+            node.setAttribute('stroke-width', '4');
+            node.setAttribute('fill', 'none');
+            node.setAttribute('stroke-linecap', 'round');
+            node.setAttribute('stroke-linejoin', 'round');
+            (node as unknown as HTMLElement).style.stroke = '#92400e';
+            (node as unknown as HTMLElement).style.strokeWidth = '4px';
+            (node as unknown as HTMLElement).style.opacity = '1';
+            (node as unknown as HTMLElement).style.visibility = 'visible';
+            (node as unknown as HTMLElement).style.display = '';
+          });
+
+          // 2. Gỡ triệt để mọi thứ gây cắt chữ & bảo toàn khoảng cách padding, gap
+          cloned.querySelectorAll('*').forEach((el) => {
+            const htmlEl = el as HTMLElement;
+
+            // Xóa class truncate trên tất cả phần tử
+            if (htmlEl.classList && htmlEl.classList.contains('truncate')) {
+              htmlEl.classList.remove('truncate');
+            }
+
+            const tagName = htmlEl.tagName.toLowerCase();
+            const isTextElement = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'p', 'strong', 'b', 'em', 'small', 'div', 'a'].includes(tagName);
+
+            if (isTextElement) {
+              if (!htmlEl.classList.contains('f3') && htmlEl.id !== 'f3Canvas') {
+                htmlEl.style.overflow = 'visible';
+                htmlEl.style.textOverflow = 'clip';
+                htmlEl.style.whiteSpace = 'normal';
+                htmlEl.style.maxWidth = 'none';
+                htmlEl.style.minWidth = '0';
+                htmlEl.style.lineHeight = '1.35';
+              }
+            }
+
+            // Gỡ triệt để max-width inline nếu có
+            if (htmlEl.style && htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
+              htmlEl.style.maxWidth = 'none';
+            }
+
+            // 3. Đảm bảo các thẻ card và thông tin con giữ đúng layout
+            const isCard = htmlEl.classList && (htmlEl.classList.contains('card_cont') || htmlEl.classList.contains('card') || htmlEl.classList.contains('f3-card'));
+            if (isCard) {
+              htmlEl.style.boxSizing = 'border-box';
+              htmlEl.style.overflow = 'visible';
+            }
+
+            const classStr = htmlEl.getAttribute('class') || '';
+            if (classStr.includes('flex') || classStr.includes('inline-flex')) {
+              if (!htmlEl.classList.contains('card_cont')) {
+                htmlEl.style.overflow = 'visible';
+              }
+            }
+          });
+        },
+      });
+
+      console.log(`[handleExportSvg] modern-screenshot SVG export completed: sourceW=${sourceW}, sourceH=${sourceH}`);
+
+      // 5. Tải file Gia_Pha_{Ho}.svg về máy
+      const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
+      const fileName = `Gia_Pha_${sanitizedSurname}.svg`;
+
+      const downloadLink = document.createElement('a');
+      downloadLink.href = svgDataUrl;
+      downloadLink.download = fileName;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    } catch (err: any) {
+      console.error('Lỗi khi tải ảnh SVG phả hệ:', err);
+      alert('Không thể tải ảnh SVG: ' + (err.message || 'Vui lòng thử lại.'));
+    } finally {
+      if (layoutRestore) {
+        layoutRestore();
+      }
+      setIsExportingSvg(false);
+    }
+  };
+
   if (!currentUserProfile) {
     return (
       <div className="min-h-[75vh] bg-stone-100 flex items-center justify-center p-4 sm:p-6">
@@ -1330,13 +1499,13 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               </div>
             </div>
 
-            {/* Quick Action Buttons: Xuất Bản PDF & Tải Ảnh JPG */}
+            {/* Quick Action Buttons: Xuất Bản PDF, Tải Ảnh JPG, Tải Ảnh SVG */}
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
                   onClick={handleExportPdf}
-                  disabled={isExportingPdf || isExportingJpg}
+                  disabled={isExportingPdf || isExportingJpg || isExportingSvg}
                   className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-800 to-red-950 hover:from-red-700 hover:to-red-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer transition-all active:scale-95"
                   title="Xuất file PDF khổ A3 ngang sắc nét, đọc rõ từng chữ trên Samsung S24 Ultra & Mobile"
                 >
@@ -1351,7 +1520,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 <button
                   type="button"
                   onClick={handleExportJpg}
-                  disabled={isExportingPdf || isExportingJpg}
+                  disabled={isExportingPdf || isExportingJpg || isExportingSvg}
                   className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 border border-amber-900/60 text-xs font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer transition-all active:scale-95"
                   title="Tải ảnh JPG độ phân giải cao"
                 >
@@ -1361,6 +1530,21 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                     <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
                   )}
                   <span>{isExportingJpg ? 'Đang xử lý...' : 'Tải Ảnh JPG'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportSvg}
+                  disabled={isExportingPdf || isExportingJpg || isExportingSvg}
+                  className="px-3 py-1.5 rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800/80 text-xs font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer transition-all active:scale-95"
+                  title="Tải ảnh vector SVG chất lượng cao, phóng to vô hạn không vỡ nét"
+                >
+                  {isExportingSvg ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                  ) : (
+                    <FileCode className="w-3.5 h-3.5 text-amber-300" />
+                  )}
+                  <span>{isExportingSvg ? 'Đang xuất...' : 'Tải Ảnh SVG'}</span>
                 </button>
               </div>
 
