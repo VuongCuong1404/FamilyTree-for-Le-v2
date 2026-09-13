@@ -642,7 +642,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   };
 
   /**
-   * Chuẩn bị layout cây mở rộng đầy đủ và tỉ lệ thẻ lớn (targetCardWidth 220-240px) để xuất ảnh sắc nét:
+   * Chuẩn bị layout cây mở rộng đầy đủ và tỉ lệ thẻ lớn (targetCardWidth = 240px) để xuất ảnh sắc nét tối đa:
    * Quét tọa độ min/max của toàn bộ cây, thiết lập kích thước thật sourceW x sourceH đủ lớn,
    * áp dụng transform độc lập không phụ thuộc vào trạng thái zoom thu nhỏ hiện tại của màn hình.
    */
@@ -702,29 +702,28 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     // Fallback nếu không tính được tọa độ
     if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
       minX = 0;
-      maxX = Math.max(chartCont.scrollWidth || 2400, 2400);
+      maxX = Math.max(chartCont.scrollWidth || 2800, 2800);
       minY = 0;
-      maxY = Math.max(chartCont.scrollHeight || 1600, 1600);
+      maxY = Math.max(chartCont.scrollHeight || 1800, 1800);
     }
 
-    // 2. Tính tỉ lệ co giãn thẻ: Thẻ gốc 280px, mục tiêu tối thiểu 220–240px để chữ to rõ ràng
-    const maxCanvasLimit = 14000;
+    // 2. Tính tỉ lệ co giãn thẻ: Thẻ gốc 280px, mục tiêu giữ cố định targetCardWidth = 240px (hoặc cao hơn nếu ổn định)
+    // Giới hạn canvas tối đa: 16000px trên desktop, 8192px trên mobile
+    const isMobile = typeof window !== 'undefined' && (
+      window.innerWidth < 768 ||
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    );
+    const maxCanvasLimit = isMobile ? 8192 : 16000;
     const margin = 100;
     const unscaledW = (maxX - minX) + margin * 2;
     const unscaledH = (maxY - minY) + margin * 2;
 
-    let targetCardWidth = 240;
-    let cardScale = targetCardWidth / 280; // ~0.857
+    const targetCardWidth = 240;
+    const cardScale = targetCardWidth / 280; // ~0.857
 
-    // Nếu kích thước khi nhân scale 3.5 vượt ngưỡng an toàn 14000px, hạ dần targetCardWidth xuống tối thiểu 220px
-    if (unscaledW * cardScale * 3.5 > maxCanvasLimit) {
-      targetCardWidth = Math.max(220, Math.floor((maxCanvasLimit / (unscaledW * 3.5)) * 280));
-      cardScale = targetCardWidth / 280;
-    }
-
-    // Đảm bảo sourceW và sourceH đủ lớn (không để ảnh chỉ khoảng 1400px chiều rộng)
-    const sourceW = Math.max(2400, Math.round(unscaledW * cardScale));
-    const sourceH = Math.max(1600, Math.round(unscaledH * cardScale));
+    // Đảm bảo sourceW và sourceH đủ lớn, không bị co nhỏ quá mức
+    const sourceW = Math.max(2800, Math.round(unscaledW * cardScale));
+    const sourceH = Math.max(1800, Math.round(unscaledH * cardScale));
 
     const treeW = Math.round(unscaledW * cardScale);
     const treeH = Math.round(unscaledH * cardScale);
@@ -1088,12 +1087,12 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
   /**
    * Xuất ảnh JPG siêu sắc nét với modern-screenshot
-   * - Mở rộng cây đầy đủ (targetCardWidth 220–240px, sourceW & sourceH đủ lớn)
+   * - Mở rộng cây đầy đủ (targetCardWidth = 240px, sourceW & sourceH đủ lớn)
    * - Không bị ảnh hưởng bởi transform zoom hiện tại của người dùng
-   * - Ép exportScale tối thiểu 3.5, ưu tiên 4.0 (chỉ giảm khi vượt giới hạn 14000px)
-   * - quality: 0.95
+   * - Ưu tiên exportScale = 4.0 (chỉ giảm khi thật sự vượt canvas limit: desktop 16000px, mobile 8192px)
+   * - quality: 0.97
    * - backgroundColor: '#faf7f2'
-   * - Ép font rõ ràng + antialiased + gỡ bỏ truncate/overflow
+   * - Ép font rõ ràng, antialiased, line-height: 1.35 !important, gỡ hoàn toàn truncate, max-width, overflow:hidden
    */
   const handleExportJpg = async () => {
     if (isExportingJpg) return;
@@ -1122,29 +1121,31 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
 
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // 4. Ép exportScale tối thiểu 3.5, ưu tiên 4.0. Chỉ giảm khi thật sự vượt giới hạn canvas an toàn (14000px)
-      const maxCanvasLimit = 14000;
+      // 4. Ưu tiên exportScale = 4.0. Chỉ giảm scale khi thật sự vượt giới hạn canvas (desktop: 16000px, mobile: 8192px)
+      const isMobile = typeof window !== 'undefined' && (
+        window.innerWidth < 768 ||
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      );
+      const maxCanvasLimit = isMobile ? 8192 : 16000;
       let exportScale = 4.0;
       const maxDim = Math.max(sourceW, sourceH);
 
       if (maxDim * exportScale > maxCanvasLimit) {
-        exportScale = Math.max(3.5, Math.floor((maxCanvasLimit / maxDim) * 10) / 10);
-        if (maxDim * exportScale > maxCanvasLimit) {
-          exportScale = Math.floor((maxCanvasLimit / maxDim) * 10) / 10;
-        }
+        exportScale = Math.floor((maxCanvasLimit / maxDim) * 10) / 10;
+        if (exportScale < 1.0) exportScale = 1.0;
       }
 
-      // 5. Chụp bằng domToJpeg của modern-screenshot với scale: exportScale, quality: 0.95, backgroundColor: '#faf7f2'
+      // 5. Chụp bằng domToJpeg của modern-screenshot với scale: exportScale, quality: 0.97, backgroundColor: '#faf7f2'
       const imgData = await domToJpeg(chartCont, {
         width: sourceW,
         height: sourceH,
         scale: exportScale,
-        quality: 0.95,
+        quality: 0.97,
         backgroundColor: '#faf7f2',
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
 
-          // 1. Ép font rõ ràng + antialiased
+          // 1. Ép font rõ ràng + antialiased + line-height: 1.35 !important
           const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
           const styleTag = document.createElement('style');
           styleTag.textContent = `
@@ -1158,7 +1159,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             .card_cont, .card, .f3-card {
               box-sizing: border-box !important;
             }
-            h1, h2, h3, h4, h5, h6, span, div, p, a, strong, b, em {
+            h1, h2, h3, h4, h5, h6, span, div, p, a, strong, b, em, small {
               line-height: 1.35 !important;
             }
           `;
@@ -1192,18 +1193,18 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.display = '';
           });
 
-          // 2. Gỡ hết truncate, max-width, overflow:hidden trên text
+          // 2. Gỡ hoàn toàn truncate, max-width, overflow:hidden trên mọi text
           cloned.querySelectorAll('*').forEach((el) => {
             const htmlEl = el as HTMLElement;
 
-            // Xử lý các thẻ chứa text có class truncate hoặc overflow hidden
+            // Gỡ toàn bộ class truncate
             if (htmlEl.classList && htmlEl.classList.contains('truncate')) {
               htmlEl.classList.remove('truncate');
             }
 
-            // Gỡ bỏ giới hạn overflow & text-overflow trên text elements
+            // Gỡ bỏ giới hạn overflow, text-overflow, max-width trên các text elements
             const tagName = htmlEl.tagName.toLowerCase();
-            const isTextElement = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'p', 'strong', 'b', 'em', 'small', 'div'].includes(tagName);
+            const isTextElement = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'p', 'strong', 'b', 'em', 'small', 'div', 'a'].includes(tagName);
 
             if (isTextElement) {
               if (!htmlEl.classList.contains('f3') && htmlEl.id !== 'f3Canvas') {
@@ -1214,12 +1215,12 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               }
             }
 
-            // Gỡ bỏ max-width giới hạn trên các nhãn nhánh, tên, thông tin
+            // Gỡ hoàn toàn max-width giới hạn trên mọi element con chứa text
             if (htmlEl.style && htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
               htmlEl.style.maxWidth = 'none';
             }
 
-            // Đảm bảo các thẻ card giữ đúng kích thước chuẩn và căn chỉnh thẳng hàng
+            // Đảm bảo các thẻ card giữ đúng kích thước chuẩn và không bị cắt xén
             if (htmlEl.classList && (htmlEl.classList.contains('card_cont') || htmlEl.classList.contains('card') || htmlEl.classList.contains('f3-card'))) {
               htmlEl.style.boxSizing = 'border-box';
               htmlEl.style.overflow = 'visible';
@@ -1228,9 +1229,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      console.log(`[handleExportJpg] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=${exportScale}, quality=0.95`);
+      console.log(`[handleExportJpg] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=${exportScale}, quality=0.97`);
 
-      // 6. Tải file Gia_Pha_{Ho}.jpg về máy (chất lượng JPEG 0.95 sắc nét)
+      // 6. Tải file Gia_Pha_{Ho}.jpg về máy (chất lượng JPEG 0.97 sắc nét cao nhất)
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
       const fileName = `Gia_Pha_${sanitizedSurname}.jpg`;
 
