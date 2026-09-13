@@ -374,9 +374,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     // Secondary label "Mẹ: {tên}" for children with clear 11px font size
     let motherHtml = '';
     if (actualMotherName) {
-      motherHtml = `<div class="text-[11px] font-semibold text-rose-800 bg-rose-50/90 border border-rose-200/80 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 max-w-full" title="Thân mẫu: ${escapeHtml(actualMotherName)}">
+      motherHtml = `<div class="text-[11px] font-semibold text-rose-800 bg-rose-50/90 border border-rose-200/80 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 w-fit max-w-full" title="Thân mẫu: ${escapeHtml(actualMotherName)}">
           <span class="text-rose-500 font-bold shrink-0">Mẹ:</span>
-          <span class="font-medium text-stone-800 break-words">${escapeHtml(actualMotherName)}</span>
+          <span class="font-medium text-stone-800 break-words whitespace-normal">${escapeHtml(actualMotherName)}</span>
         </div>`;
     }
 
@@ -384,26 +384,26 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       ? `<div class="mt-2 pt-1.5 border-t border-stone-200/70 text-xs flex items-start gap-1 text-stone-700 bg-stone-50/90 -mx-3.5 -mb-3.5 p-2 rounded-b-2xl">
           <span class="text-rose-500 font-bold shrink-0 text-xs mt-0.5">♥</span>
           <span class="text-[11px] text-stone-500 font-medium shrink-0 mt-0.5">Phối ngẫu:</span>
-          <span class="font-semibold text-stone-800 text-xs break-words flex-1 min-w-0" title="${escapeHtml(formattedSpouses)}">
+          <span class="font-semibold text-stone-800 text-xs break-words whitespace-normal flex-1" title="${escapeHtml(formattedSpouses)}">
             ${escapeHtml(formattedSpouses)}
           </span>
         </div>`
       : '';
 
     const lunarHtml = !member.isAlive && member.lunarDeathDate
-      ? `<div class="text-[11.5px] text-red-800 font-semibold mt-0.5 flex items-start gap-1 break-words">
+      ? `<div class="text-[11.5px] text-red-800 font-semibold mt-0.5 flex items-start gap-1 break-words whitespace-normal">
           <span>📅 Kỵ nhật: ${escapeHtml(member.lunarDeathDate)}</span>
         </div>`
       : '';
 
     const occupHtml = member.isAlive && (member.occupation || member.address)
-      ? `<div class="text-[11px] text-stone-600 mt-0.5 break-words">
+      ? `<div class="text-[11px] text-stone-600 mt-0.5 break-words whitespace-normal">
           ${escapeHtml(member.occupation || member.address || '')}
         </div>`
       : '';
 
     return `
-      <div class="relative w-[270px] sm:w-[280px] rounded-2xl p-3 sm:p-3.5 transition-all duration-200 cursor-pointer shadow-md select-none border-2 ${cardBgClass}">
+      <div class="relative w-[280px] rounded-2xl p-3 sm:p-3.5 transition-all duration-200 cursor-pointer shadow-md select-none border-2 ${cardBgClass}">
         <div class="flex items-center justify-between gap-1.5 mb-1.5 pb-1.5 border-b border-stone-100">
           <div class="flex items-center gap-1 flex-wrap">
             <span class="px-2 py-0.5 rounded-md text-[11px] font-bold font-serif-clan uppercase tracking-wider ${
@@ -451,7 +451,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1 flex-wrap">
-              <h4 class="font-bold text-base font-serif-clan ${isHighlighted ? 'text-amber-950 font-black underline decoration-amber-500 decoration-2' : 'text-stone-950'} tracking-tight break-words">
+              <h4 class="font-bold text-base font-serif-clan ${isHighlighted ? 'text-amber-950 font-black underline decoration-amber-500 decoration-2' : 'text-stone-950'} tracking-tight break-words whitespace-normal overflow-visible">
                 ${escapeHtml(member.fullName)}
               </h4>
               ${member.title ? `
@@ -1213,6 +1213,15 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               text-overflow: clip !important;
               white-space: normal !important;
               max-width: none !important;
+              word-break: break-word !important;
+              overflow-wrap: break-word !important;
+            }
+            .card_cont h4 {
+              display: inline-block !important;
+              max-width: none !important;
+              white-space: normal !important;
+              overflow: visible !important;
+              word-break: break-word !important;
             }
           `;
           cloned.prepend(styleTag);
@@ -1273,6 +1282,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 htmlEl.style.maxWidth = 'none';
                 htmlEl.style.minWidth = '0';
                 htmlEl.style.lineHeight = '1.35';
+                htmlEl.style.wordBreak = 'break-word';
+                htmlEl.style.overflowWrap = 'break-word';
               }
             }
 
@@ -1401,6 +1412,15 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
               text-overflow: clip !important;
               white-space: normal !important;
               max-width: none !important;
+              word-break: break-word !important;
+              overflow-wrap: break-word !important;
+            }
+            .card_cont h4 {
+              display: inline-block !important;
+              max-width: none !important;
+              white-space: normal !important;
+              overflow: visible !important;
+              word-break: break-word !important;
             }
           `;
           cloned.prepend(styleTag);
@@ -1461,6 +1481,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
                 htmlEl.style.maxWidth = 'none';
                 htmlEl.style.minWidth = '0';
                 htmlEl.style.lineHeight = '1.35';
+                htmlEl.style.wordBreak = 'break-word';
+                htmlEl.style.overflowWrap = 'break-word';
               }
             }
 
