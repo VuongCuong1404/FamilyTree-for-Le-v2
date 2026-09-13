@@ -1110,9 +1110,12 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   /**
    * Xuất ảnh JPG siêu sắc nét với modern-screenshot
    * - Scale: 4 (tối thiểu 3.5, tối ưu 4.0)
-   * - Quality: 0.93
-   * - Ép font-family rõ ràng: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif
-   * - Giữ nguyên logic setupTreeForExport hiện tại
+   * - Quality: 0.95
+   * - Ép font-family cứng: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", sans-serif !important;
+   * - Ép line-height: 1.35 !important;
+   * - Ép -webkit-font-smoothing: antialiased; và text-rendering: optimizeLegibility;
+   * - Gỡ hoàn toàn mọi class truncate, text-overflow, max-width, overflow: hidden trên các phần tử chứa text
+   * - Đảm bảo thẻ card giữ đúng kích thước, padding, khoảng cách như trên app.
    */
   const handleExportJpg = async () => {
     if (isExportingJpg) return;
@@ -1150,18 +1153,18 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         exportScale = 3.5;
       }
 
-      // 4. Chụp bằng domToJpeg của modern-screenshot với scale: exportScale (3.5 - 4.0), quality: 0.93
+      // 4. Chụp bằng domToJpeg của modern-screenshot với scale: exportScale (3.5 - 4.0), quality: 0.95
       const imgData = await domToJpeg(chartCont, {
         width: sourceW,
         height: sourceH,
         scale: exportScale,
-        quality: 0.93,
+        quality: 0.95,
         backgroundColor: '#faf7f2',
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
 
-          // 1. Ép font-family chuẩn, box-sizing, text-rendering và font-smoothing rõ ràng
-          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
+          // 1. Ép font-family chuẩn, line-height, text-rendering và font-smoothing rõ ràng
+          const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", sans-serif';
           const styleTag = document.createElement('style');
           styleTag.textContent = `
             * {
@@ -1174,7 +1177,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             .card_cont, .card, .f3-card {
               box-sizing: border-box !important;
             }
-            h4, span, div, p {
+            h1, h2, h3, h4, h5, h6, span, div, p, a, strong, b, em {
               line-height: 1.35 !important;
             }
           `;
@@ -1208,21 +1211,30 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.display = '';
           });
 
-          // 2. Gỡ hoàn toàn class truncate, max-width, overflow:hidden trên text để chữ thẳng hàng, không bị lệch hoặc cắt cụt
+          // 2. Gỡ hoàn toàn class truncate, text-overflow, max-width, overflow:hidden trên tất cả phần tử chứa text
           cloned.querySelectorAll('*').forEach((el) => {
             const htmlEl = el as HTMLElement;
 
-            // Xử lý các thẻ chứa text có class truncate
+            // Xử lý các thẻ chứa text có class truncate hoặc overflow hidden
             if (htmlEl.classList && htmlEl.classList.contains('truncate')) {
               htmlEl.classList.remove('truncate');
-              htmlEl.style.overflow = 'visible';
-              htmlEl.style.textOverflow = 'clip';
-              htmlEl.style.whiteSpace = 'normal';
-              htmlEl.style.wordBreak = 'break-word';
-              htmlEl.style.lineHeight = '1.35';
             }
 
-            // Gỡ bỏ max-width giới hạn
+            // Gỡ bỏ giới hạn overflow & text-overflow trên text elements
+            const tagName = htmlEl.tagName.toLowerCase();
+            const isTextElement = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'p', 'strong', 'b', 'em', 'small', 'div'].includes(tagName);
+
+            if (isTextElement) {
+              // Không gỡ overflow của các container lớn bên ngoài để không vỡ layout
+              if (!htmlEl.classList.contains('f3') && htmlEl.id !== 'f3Canvas') {
+                htmlEl.style.overflow = 'visible';
+                htmlEl.style.textOverflow = 'clip';
+                htmlEl.style.whiteSpace = 'normal';
+                htmlEl.style.lineHeight = '1.35';
+              }
+            }
+
+            // Gỡ bỏ max-width giới hạn trên các nhãn nhánh, tên, thông tin
             if (htmlEl.style && htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
               htmlEl.style.maxWidth = 'none';
             }
@@ -1236,9 +1248,9 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         },
       });
 
-      console.log(`[handleExportJpg] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=${exportScale}`);
+      console.log(`[handleExportJpg] modern-screenshot export completed: sourceW=${sourceW}, sourceH=${sourceH}, scale=${exportScale}, quality=0.95`);
 
-      // 5. Tải file Gia_Pha_{Ho}.jpg về máy (chất lượng JPEG 0.93 sắc nét)
+      // 5. Tải file Gia_Pha_{Ho}.jpg về máy (chất lượng JPEG 0.95 sắc nét)
       const sanitizedSurname = clanInfo.clanSurname.trim().replace(/\s+/g, '_');
       const fileName = `Gia_Pha_${sanitizedSurname}.jpg`;
 
