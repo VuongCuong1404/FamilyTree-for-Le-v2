@@ -534,6 +534,34 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       chart.updateTree({ initial: true, tree_position: 'fit', transition_time: 0 });
       chartInstanceRef.current = chart;
 
+      // Cấu hình zoom mượt mà, giảm độ nhạy lăn chuột và yêu cầu giữ phím Ctrl (Google Maps style)
+      try {
+        const f3Canvas = container.querySelector('#f3Canvas') as any;
+        const zoomListener = (chart.svg && (chart.svg as any).__zoomObj) ? chart.svg : f3Canvas;
+        const d3Zoom = zoomListener?.__zoomObj;
+
+        if (d3Zoom) {
+          // 1. Chỉ cho phép zoom bằng con lăn chuột khi giữ phím Ctrl (hoặc Meta trên Mac). Giữ nguyên kéo thả chuột và cảm ứng 2 ngón
+          d3Zoom.filter((e: any) => {
+            if (e.type === 'wheel') {
+              return !!(e.ctrlKey || e.metaKey);
+            }
+            if (e.touches && e.touches.length < 2) {
+              return e.type !== 'wheel';
+            }
+            return !e.button;
+          });
+
+          // 2. Giảm độ nhạy mouse wheel zoom (scale factor nhỏ hơn ~0.001) để tránh trôi nhanh, kiểm soát mượt mà
+          d3Zoom.wheelDelta((e: any) => {
+            const modeScale = e.deltaMode === 1 ? 0.025 : e.deltaMode ? 0.5 : 0.001;
+            return -e.deltaY * modeScale;
+          });
+        }
+      } catch (zoomErr) {
+        console.warn('Không thể tùy biến bộ lọc d3Zoom:', zoomErr);
+      }
+
       // Click card delegation fallback
       container.addEventListener('click', (e: MouseEvent) => {
         const target = e.target as HTMLElement;
@@ -1117,12 +1145,12 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
       const maxCanvasDim = typeof window !== 'undefined' && window.innerWidth < 768 ? 8192 : 14000;
       let exportScale = 4.0;
       if (sourceW * exportScale > maxCanvasDim) {
-        exportScale = Math.max(2.5, Math.floor((maxCanvasDim / sourceW) * 10) / 10);
+        exportScale = Math.max(3.0, Math.floor((maxCanvasDim / sourceW) * 10) / 10);
       } else if (sourceW * 3.5 > maxCanvasDim) {
         exportScale = 3.5;
       }
 
-      // 4. Chụp bằng domToJpeg của modern-screenshot với scale: exportScale, quality: 0.93
+      // 4. Chụp bằng domToJpeg của modern-screenshot với scale: exportScale (3.5 - 4.0), quality: 0.93
       const imgData = await domToJpeg(chartCont, {
         width: sourceW,
         height: sourceH,
@@ -1132,12 +1160,22 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         onCloneNode: (cloned) => {
           if (!cloned || !(cloned instanceof Element)) return;
 
-          // Ép font-family rõ ràng: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif
+          // 1. Ép font-family chuẩn, box-sizing, text-rendering và font-smoothing rõ ràng
           const standardFont = 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';
           const styleTag = document.createElement('style');
           styleTag.textContent = `
             * {
               font-family: ${standardFont} !important;
+              box-sizing: border-box !important;
+              -webkit-font-smoothing: antialiased !important;
+              -moz-osx-font-smoothing: grayscale !important;
+              text-rendering: optimizeLegibility !important;
+            }
+            .card_cont, .card, .f3-card {
+              box-sizing: border-box !important;
+            }
+            h4, span, div, p {
+              line-height: 1.35 !important;
             }
           `;
           cloned.prepend(styleTag);
@@ -1170,17 +1208,29 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             (node as unknown as HTMLElement).style.display = '';
           });
 
-          // Gỡ class truncate và max-width để tên và thông tin không bị cắt (Lê Thị M..)
+          // 2. Gỡ hoàn toàn class truncate, max-width, overflow:hidden trên text để chữ thẳng hàng, không bị lệch hoặc cắt cụt
           cloned.querySelectorAll('*').forEach((el) => {
             const htmlEl = el as HTMLElement;
+
+            // Xử lý các thẻ chứa text có class truncate
             if (htmlEl.classList && htmlEl.classList.contains('truncate')) {
               htmlEl.classList.remove('truncate');
               htmlEl.style.overflow = 'visible';
               htmlEl.style.textOverflow = 'clip';
               htmlEl.style.whiteSpace = 'normal';
+              htmlEl.style.wordBreak = 'break-word';
+              htmlEl.style.lineHeight = '1.35';
             }
+
+            // Gỡ bỏ max-width giới hạn
             if (htmlEl.style && htmlEl.style.maxWidth && htmlEl.style.maxWidth !== 'none') {
               htmlEl.style.maxWidth = 'none';
+            }
+
+            // Đảm bảo các thẻ thẻ bài (cards) giữ đúng kích thước chuẩn và căn chỉnh thẳng hàng
+            if (htmlEl.classList && (htmlEl.classList.contains('card_cont') || htmlEl.classList.contains('card') || htmlEl.classList.contains('f3-card'))) {
+              htmlEl.style.boxSizing = 'border-box';
+              htmlEl.style.overflow = 'visible';
             }
           });
         },
@@ -1443,7 +1493,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
             <div className="absolute top-4 left-4 z-20 flex items-center gap-2 pointer-events-none transition-opacity duration-500">
               <div className="bg-stone-900/85 backdrop-blur-xs text-amber-100 text-[11px] px-3 py-1.5 rounded-xl border border-amber-800/40 shadow-md flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                <span className="font-medium">Chạm 2 ngón để zoom • Kéo chuột/ngón tay để di chuyển • Cuộn để phóng to</span>
+                <span className="font-medium">Chạm 2 ngón để zoom • Kéo chuột/ngón tay để di chuyển • Giữ Ctrl + Cuộn chuột để phóng to</span>
               </div>
             </div>
           )}
