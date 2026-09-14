@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Gender, ClanMember } from '../types';
 
 export interface AgeCalculationResult {
@@ -371,5 +372,26 @@ export function removeVietnameseAccents(str?: string | null): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd')
     .replace(/Đ/g, 'D');
+}
+
+/**
+ * Hook useDebouncedValue: Trì hoãn cập nhật giá trị sau một khoảng thời gian (mặc định 300ms).
+ * Giúp tối ưu hóa các thao tác tìm kiếm, lọc danh sách hoặc render lại sơ đồ cây phả hệ,
+ * chỉ thực hiện tính toán sau khi người dùng dừng gõ phím ~300ms.
+ */
+export function useDebouncedValue<T>(value: T, delayMs: number = 300): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [value, delayMs]);
+
+  return debouncedValue;
 }
 

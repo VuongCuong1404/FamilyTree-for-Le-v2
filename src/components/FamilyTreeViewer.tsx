@@ -24,7 +24,7 @@ import {
   FileCode
 } from 'lucide-react';
 import { ClanMember, ClanInfo, UserProfile, Role } from '../types';
-import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder, removeVietnameseAccents } from '../utils/genealogyUtils';
+import { calculateAgeInfo, getGenderVisuals, calculateClanStats, getMemberOrder, removeVietnameseAccents, useDebouncedValue } from '../utils/genealogyUtils';
 import { EMBEDDED_FONTS_CSS } from '../utils/embeddedFonts';
 
 interface FamilyTreeViewerProps {
@@ -209,6 +209,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   const [selectedGenFilter, setSelectedGenFilter] = useState<number | 'all'>('all');
   const [showSpouses, setShowSpouses] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
   const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [isExportingPng, setIsExportingPng] = useState<boolean>(false);
@@ -280,7 +281,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
   // Check matching search
   const isMatchSearch = (m: ClanMember | undefined | null) => {
     if (!m) return false;
-    const trimmed = searchQuery.trim();
+    const trimmed = debouncedSearchQuery.trim();
     if (!trimmed) return false;
     const q = trimmed.toLowerCase();
     const qUnaccent = removeVietnameseAccents(q);
@@ -332,7 +333,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     const ageInfo = calculateAgeInfo(member.birthYear, member.deathYear, member.isAlive);
     const genderVisual = getGenderVisuals(member.gender, member.generation);
 
-    const hasSearch = Boolean(searchQuery && searchQuery.trim());
+    const hasSearch = Boolean(debouncedSearchQuery && debouncedSearchQuery.trim());
     const isHighlighted = isMatchSearch(member);
     const matchesGender = isGenderMatch(member);
 
@@ -509,7 +510,8 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
     container.innerHTML = '';
 
     const rootMember = treeMembers.find(m => m.generation === 1) || treeMembers[0];
-    const rootId = rootMember ? rootMember.id : chartData[0].id;
+    const firstMatched = debouncedSearchQuery.trim() ? treeMembers.find(m => isMatchSearch(m)) : null;
+    const rootId = firstMatched ? firstMatched.id : (rootMember ? rootMember.id : chartData[0].id);
 
     try {
       const chart = (f3 as any).createChart(container, chartData);
@@ -591,7 +593,7 @@ export const FamilyTreeViewer: React.FC<FamilyTreeViewerProps> = ({
         container.innerHTML = '';
       }
     };
-  }, [chartData, maxGen, genderFilter]);
+  }, [chartData, maxGen, genderFilter, debouncedSearchQuery]);
 
   // Manual Zoom In (hỗ trợ cả f3.handlers.manualZoom và fallback)
   const handleZoomIn = () => {

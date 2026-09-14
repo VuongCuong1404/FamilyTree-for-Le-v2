@@ -30,7 +30,8 @@ import {
   getMemberOrder, 
   compareMembersForList,
   getGenerationRomanTitle,
-  removeVietnameseAccents
+  removeVietnameseAccents,
+  useDebouncedValue
 } from '../utils/genealogyUtils';
 import { MemberListCard } from './MemberListCard';
 
@@ -74,9 +75,9 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
   // Chế độ hiển thị: Mặc định 'by_generation' (Theo đời), tùy chọn 'flat' (Danh sách phẳng)
   const [viewMode, setViewMode] = useState<'by_generation' | 'flat'>('by_generation');
 
-  // Input tìm kiếm thực tế & tìm kiếm đã debounce 250ms để tối ưu hiệu năng
+  // Input tìm kiếm thực tế & tìm kiếm đã debounce 300ms với useDebouncedValue
   const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(searchTerm, 300);
 
   const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
   const [branchFilter, setBranchFilter] = useState('all');
@@ -120,14 +121,6 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
     window.addEventListener('resize', updateCols);
     return () => window.removeEventListener('resize', updateCols);
   }, []);
-
-  // Debounce search input 250ms
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchTerm);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
 
   // Tính số thế hệ tối đa động từ danh sách thành viên (tối thiểu là 7)
   const maxGen = useMemo(() => {
@@ -249,7 +242,6 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
 
   const handleResetFilters = useCallback(() => {
     setSearchTerm('');
-    setDebouncedSearch('');
     setGenderFilter('all');
     setBranchFilter('all');
     setGenFilter('all');
@@ -758,7 +750,6 @@ export const DirectorySearch: React.FC<DirectorySearchProps> = ({
                       type="button"
                       onClick={() => {
                         setSearchTerm('');
-                        setDebouncedSearch('');
                       }}
                       className="absolute right-4 top-3 text-stone-400 hover:text-stone-700 text-sm font-semibold cursor-pointer"
                     >
