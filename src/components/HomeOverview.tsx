@@ -57,38 +57,97 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
   // Current lunar info via lunar-javascript
   const todayLunar = useMemo(() => convertSolarToLunar(new Date()), []);
 
-  // Live countdown state for Giỗ Tổ (10/03 Âm Lịch)
-  const gioToInfo = useMemo(() => getUpcomingAnniversaryDate('10/03 Âm lịch'), []);
+  // Tìm sự kiện Đại Lễ sắp tới ưu tiên: is_featured -> isMajorAnniversary -> từ khóa Giỗ Tổ/Thủy Tổ/Đại Lễ -> sự kiện gần nhất
+  const featuredEvent = useMemo(() => {
+    if (!memorialEvents || memorialEvents.length === 0) return null;
 
-  const [timeLeft, setTimeLeft] = useState(() => {
-    const targetDate = new Date('2026-04-26T07:30:00');
+    // 1. Ưu tiên sự kiện có is_featured hoặc isMajorAnniversary
+    const majorEvents = memorialEvents.filter(
+      ev => (ev as any).is_featured === true || ev.isMajorAnniversary === true
+    );
+
+    // 2. Hoặc tìm theo từ khóa 'Giỗ Tổ', 'Thủy Tổ', 'Đại Lễ'
+    const keywordEvents = memorialEvents.filter(ev =>
+      /giỗ tổ|thủy tổ|đại lễ|khởi tổ|tổ tiên/i.test(ev.title)
+    );
+
+    const candidates = majorEvents.length > 0
+      ? majorEvents
+      : keywordEvents.length > 0
+        ? keywordEvents
+        : memorialEvents;
+
     const now = new Date();
-    const diff = targetDate.getTime() - now.getTime();
-    if (diff <= 0) return { days: gioToInfo.daysRemaining || 18, hours: 8, minutes: 30, seconds: 0 };
+    const evaluated = candidates.map(ev => {
+      let anniv = getUpcomingAnniversaryDate(ev.lunarDate);
+      let targetDate = new Date(anniv.solarDate);
+      targetDate.setHours(7, 30, 0, 0);
+
+      // Nếu sự kiện năm nay đã qua quá 24h, tính cho năm tiếp theo
+      if (targetDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000) {
+        anniv = getUpcomingAnniversaryDate(ev.lunarDate, now.getFullYear() + 1);
+        targetDate = new Date(anniv.solarDate);
+        targetDate.setHours(7, 30, 0, 0);
+      }
+
+      const diffTime = targetDate.getTime() - now.getTime();
+
+      return {
+        event: ev,
+        diffTime,
+        targetDate,
+        solarDateStr: anniv.solarDateStr,
+        canChiYear: anniv.canChiYear,
+      };
+    });
+
+    // Sắp xếp sự kiện sắp diễn ra trước
+    evaluated.sort((a, b) => {
+      if (a.diffTime >= 0 && b.diffTime < 0) return -1;
+      if (a.diffTime < 0 && b.diffTime >= 0) return 1;
+      return a.diffTime - b.diffTime;
+    });
+
+    return evaluated[0] || null;
+  }, [memorialEvents]);
+
+  // Bộ đếm ngược thời gian thực (diff <= 0 -> 0 hết, không gán số ảo)
+  const [timeLeft, setTimeLeft] = useState(() => {
+    if (!featuredEvent) return { days: 0, hours: 0, minutes: 0, seconds: 0, isPast: false };
+    const now = new Date();
+    const diff = featuredEvent.targetDate.getTime() - now.getTime();
+    if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, isPast: true };
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
     const minutes = Math.floor((diff / (1000 * 60)) % 60);
     const seconds = Math.floor((diff / 1000) % 60);
-    return { days: Math.max(0, days), hours, minutes, seconds };
+    return { days: Math.max(0, days), hours, minutes, seconds, isPast: false };
   });
 
   useEffect(() => {
-    const targetDate = new Date('2026-04-26T07:30:00');
-    const timer = setInterval(() => {
+    if (!featuredEvent) {
+      setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, isPast: false });
+      return;
+    }
+
+    const calcTimeLeft = () => {
       const now = new Date();
-      const diff = targetDate.getTime() - now.getTime();
+      const diff = featuredEvent.targetDate.getTime() - now.getTime();
       if (diff <= 0) {
-        setTimeLeft({ days: 18, hours: 8, minutes: 30, seconds: 0 });
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, isPast: true });
       } else {
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
         const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
         const minutes = Math.floor((diff / (1000 * 60)) % 60);
         const seconds = Math.floor((diff / 1000) % 60);
-        setTimeLeft({ days: Math.max(0, days), hours, minutes, seconds });
+        setTimeLeft({ days: Math.max(0, days), hours, minutes, seconds, isPast: false });
       }
-    }, 1000);
+    };
+
+    calcTimeLeft();
+    const timer = setInterval(calcTimeLeft, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [featuredEvent]);
 
   // RSVP Modal State
   const [isRsvpOpen, setIsRsvpOpen] = useState(false);
@@ -103,14 +162,17 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
   const [copiedInvite, setCopiedInvite] = useState(false);
 
   const handleShareInvite = () => {
-    const inviteText = `TRÂN TRỌNG KÍNH MỜI CON CHÁU HỌ ${clanInfo.clanSurname.toUpperCase()} TỘC\nTham dự: ĐẠI LỄ GIỖ TỔ HỌ ${clanInfo.clanSurname.toUpperCase()} TỘC - XUÂN BÍNH NGỌ 2026\n• Âm lịch: Ngày 10/03 Âm lịch\n• Dương lịch: Chủ Nhật, 26/04/2026 (07:30 - 13:30)\n• Địa điểm: ${clanInfo.ancestralHallLocation}\nKính mong toàn thể bà con nội ngoại sắp xếp thời gian tề tựu đông đủ để thắp nén tâm hương tưởng nhớ tiên tổ!`;
+    if (!featuredEvent) return;
+    const locationStr = featuredEvent.event.location || clanInfo.ancestralHallLocation;
+    const inviteText = `TRÂN TRỌNG KÍNH MỜI CON CHÁU HỌ ${clanInfo.clanSurname.toUpperCase()} TỘC\nTham dự: ${featuredEvent.event.title.toUpperCase()}\n• Âm lịch: ${featuredEvent.event.lunarDate} (${featuredEvent.canChiYear})\n• Dương lịch: Ngày ${featuredEvent.solarDateStr} (07:30 - 13:30)\n• Địa điểm: ${locationStr}\nKính mong toàn thể bà con nội ngoại sắp xếp thời gian tề tựu đông đủ để thắp nén tâm hương tưởng nhớ tiên tổ!`;
     navigator.clipboard.writeText(inviteText);
     setCopiedInvite(true);
     setTimeout(() => setCopiedInvite(false), 3000);
   };
 
   const handleOpenMap = () => {
-    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clanInfo.ancestralHallLocation)}`;
+    const loc = featuredEvent?.event.location || clanInfo.ancestralHallLocation;
+    const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc)}`;
     window.open(mapUrl, '_blank', 'noopener,noreferrer');
   };
 
@@ -122,10 +184,13 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
     setRsvpError(null);
 
     const countNum = rsvpCount === '5+' ? 5 : Number(rsvpCount) || 1;
+    const eventTitle = featuredEvent
+      ? `${featuredEvent.event.title} - ${featuredEvent.event.lunarDate}`
+      : `Đại Lễ Giỗ Tổ Họ ${clanInfo.clanSurname.toUpperCase()} Tộc`;
 
     try {
       const res = await saveRsvpService({
-        event_title: `Đại Lễ Giỗ Tổ Họ ${clanInfo.clanSurname.toUpperCase()} Tộc - 10/03 Âm Lịch`,
+        event_title: eventTitle,
         full_name: rsvpName.trim(),
         phone: rsvpPhone.trim() || undefined,
         branch: rsvpBranch,
@@ -136,7 +201,6 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
       setIsSubmittingRsvp(false);
 
       if (!res.success) {
-        // Return real error from Supabase
         setRsvpError(res.error || 'Có lỗi xảy ra khi lưu thông tin báo danh vào máy chủ Supabase.');
         return;
       }
@@ -326,116 +390,135 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
 
       {/* KHỐI ĐẾM NGƯỢC ĐẠI LỄ & SỰ KIỆN TRỌNG ĐẠI */}
       <div className="max-w-4xl mx-auto px-4 mt-8">
-        <div className="rounded-3xl bg-gradient-to-b from-[#2a1309] via-[#3d140e] to-[#1e0a05] text-amber-50 border-2 border-amber-500/40 p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-          
-          <div className="relative z-10 space-y-5">
+        {featuredEvent ? (
+          <div className="rounded-3xl bg-gradient-to-b from-[#2a1309] via-[#3d140e] to-[#1e0a05] text-amber-50 border-2 border-amber-500/40 p-6 sm:p-8 shadow-2xl relative overflow-hidden">
             
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <span className="px-3.5 py-1 rounded-full bg-red-700 text-amber-100 text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-1.5">
-                <Flame className="w-3.5 h-3.5 text-amber-300" />
-                ĐẠI LỄ TRỌNG ĐẠI
-              </span>
-              <span className="px-3.5 py-1 rounded-full bg-amber-950/80 text-amber-300 border border-amber-600/50 text-xs font-semibold">
-                Âm lịch: Ngày 10/03 Âm lịch ({gioToInfo.canChiYear})
-              </span>
-              <span className="px-3.5 py-1 rounded-full bg-stone-900/80 text-stone-300 border border-stone-700 text-xs font-medium">
-                Dương lịch: Chủ Nhật, 26/04/2026
-              </span>
-            </div>
-
-            <div>
-              <h3 className="text-xl sm:text-2xl md:text-3xl font-bold font-serif-clan text-amber-100 tracking-wide leading-tight">
-                ĐẠI LỄ GIỖ TỔ HỌ {clanInfo.clanSurname.toUpperCase()} TỘC - XUÂN BÍNH NGỌ 2026
-              </h3>
-              <p className="text-xs sm:text-sm text-stone-300 mt-2 leading-relaxed">
-                Sự kiện lớn nhất trong năm quy tụ con cháu toàn gia tộc. Địa điểm: {clanInfo.ancestralHallLocation}.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div className="p-3.5 rounded-2xl bg-black/40 border border-amber-900/50 flex items-start gap-3">
-                <Clock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <div className="text-xs text-stone-400">Thời gian:</div>
-                  <div className="text-sm font-bold text-amber-100">07:30 - 13:30 • Ngày 26/04/2026</div>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-black/40 border border-amber-900/50 flex items-start gap-3">
-                <MapPin className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <div className="text-xs text-stone-400">Địa điểm:</div>
-                  <div className="text-sm font-bold text-amber-100 truncate">{clanInfo.ancestralHallLocation}</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5 pt-2">
-              <button
-                onClick={() => setIsRsvpOpen(true)}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs shadow-md flex items-center gap-1.5 transition-all"
-              >
-                <UserCheck className="w-4 h-4" />
-                <span>Báo danh tham dự Giỗ Tổ</span>
-              </button>
-
-              <button
-                onClick={handleShareInvite}
-                className="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-200 border border-amber-600/50 text-xs font-semibold flex items-center gap-1.5 transition-all"
-              >
-                <Share2 className="w-4 h-4 text-amber-400" />
-                <span>{copiedInvite ? '✓ Đã chép thư mời!' : 'Chia sẻ vào Zalo'}</span>
-              </button>
-
-              <button
-                onClick={handleOpenMap}
-                className="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-200 border border-stone-700 text-xs font-semibold flex items-center gap-1.5 transition-all"
-              >
-                <Navigation className="w-4 h-4 text-sky-400" />
-                <span>Chỉ đường</span>
-              </button>
-            </div>
-
-            {/* Countdown Digital Timer */}
-            <div className="mt-4 pt-4 border-t border-amber-900/60 text-center">
-              <div className="text-xs font-bold uppercase tracking-widest text-amber-400 font-serif-clan mb-2">
-                ĐẾM NGƯỢC ĐẠI LỄ
-              </div>
-
-              <div className="flex items-baseline justify-center gap-2">
-                <span className="text-4xl sm:text-5xl font-bold font-serif-clan text-amber-200">
-                  {timeLeft.days}
+            <div className="relative z-10 space-y-5">
+              
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <span className="px-3.5 py-1 rounded-full bg-red-700 text-amber-100 text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-1.5">
+                  <Flame className="w-3.5 h-3.5 text-amber-300" />
+                  ĐẠI LỄ TRỌNG ĐẠI
                 </span>
-                <span className="text-base sm:text-lg font-serif-clan text-amber-300">
-                  ngày nữa
+                <span className="px-3.5 py-1 rounded-full bg-amber-950/80 text-amber-300 border border-amber-600/50 text-xs font-semibold">
+                  Âm lịch: {featuredEvent.event.lunarDate} ({featuredEvent.canChiYear})
+                </span>
+                <span className="px-3.5 py-1 rounded-full bg-stone-900/80 text-stone-300 border border-stone-700 text-xs font-medium">
+                  Dương lịch: Ngày {featuredEvent.solarDateStr}
                 </span>
               </div>
 
-              <div className="mt-3 flex items-center justify-center gap-2 text-center">
-                <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 min-w-[56px]">
-                  <div className="text-base font-bold font-mono text-amber-200">{timeLeft.days}</div>
-                  <div className="text-[9px] text-stone-400 uppercase">Ngày</div>
+              <div>
+                <h3 className="text-xl sm:text-2xl md:text-3xl font-bold font-serif-clan text-amber-100 tracking-wide leading-tight">
+                  {featuredEvent.event.title.toUpperCase()}
+                </h3>
+                <p className="text-xs sm:text-sm text-stone-300 mt-2 leading-relaxed">
+                  {featuredEvent.event.description || `Sự kiện lớn nhất trong năm quy tụ con cháu toàn gia tộc. Địa điểm: ${featuredEvent.event.location || clanInfo.ancestralHallLocation}.`}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="p-3.5 rounded-2xl bg-black/40 border border-amber-900/50 flex items-start gap-3">
+                  <Clock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs text-stone-400">Thời gian:</div>
+                    <div className="text-sm font-bold text-amber-100">07:30 - 13:30 • Ngày {featuredEvent.solarDateStr}</div>
+                  </div>
                 </div>
-                <span className="text-amber-500 font-bold">:</span>
-                <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 min-w-[56px]">
-                  <div className="text-base font-bold font-mono text-amber-200">{String(timeLeft.hours).padStart(2, '0')}</div>
-                  <div className="text-[9px] text-stone-400 uppercase">Giờ</div>
-                </div>
-                <span className="text-amber-500 font-bold">:</span>
-                <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 min-w-[56px]">
-                  <div className="text-base font-bold font-mono text-amber-200">{String(timeLeft.minutes).padStart(2, '0')}</div>
-                  <div className="text-[9px] text-stone-400 uppercase">Phút</div>
-                </div>
-                <span className="text-amber-500 font-bold">:</span>
-                <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 min-w-[56px]">
-                  <div className="text-base font-bold font-mono text-amber-200">{String(timeLeft.seconds).padStart(2, '0')}</div>
-                  <div className="text-[9px] text-stone-400 uppercase">Giây</div>
+
+                <div className="p-3.5 rounded-2xl bg-black/40 border border-amber-900/50 flex items-start gap-3">
+                  <MapPin className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs text-stone-400">Địa điểm:</div>
+                    <div className="text-sm font-bold text-amber-100 truncate">
+                      {featuredEvent.event.location || clanInfo.ancestralHallLocation}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
 
+              <div className="flex flex-wrap items-center gap-2.5 pt-2">
+                <button
+                  onClick={() => setIsRsvpOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Báo danh tham dự lễ</span>
+                </button>
+
+                <button
+                  onClick={handleShareInvite}
+                  className="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-200 border border-amber-600/50 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Share2 className="w-4 h-4 text-amber-400" />
+                  <span>{copiedInvite ? '✓ Đã chép thư mời!' : 'Chia sẻ vào Zalo'}</span>
+                </button>
+
+                <button
+                  onClick={handleOpenMap}
+                  className="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-200 border border-stone-700 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Navigation className="w-4 h-4 text-sky-400" />
+                  <span>Chỉ đường</span>
+                </button>
+              </div>
+
+              {/* Countdown Digital Timer */}
+              <div className="mt-4 pt-4 border-t border-amber-900/60 text-center">
+                <div className="text-xs font-bold uppercase tracking-widest text-amber-400 font-serif-clan mb-2">
+                  {timeLeft.isPast ? 'SỰ KIỆN ĐÃ ĐẾN NGÀY TỔ CHỨC' : 'ĐẾM NGƯỢC ĐẠI LỄ'}
+                </div>
+
+                {timeLeft.isPast ? (
+                  <div className="py-1">
+                    <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-950/70 border border-amber-500/40 text-amber-300 font-semibold font-serif-clan text-xs sm:text-sm">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      Sự kiện đang diễn ra hoặc đã hoàn tất nghi lễ năm nay
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-baseline justify-center gap-2">
+                    <span className="text-4xl sm:text-5xl font-bold font-serif-clan text-amber-200">
+                      {timeLeft.days}
+                    </span>
+                    <span className="text-base sm:text-lg font-serif-clan text-amber-300">
+                      ngày nữa
+                    </span>
+                  </div>
+                )}
+
+                <div className="mt-3 flex items-center justify-center gap-2 text-center">
+                  <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 min-w-[56px]">
+                    <div className="text-base font-bold font-mono text-amber-200">{timeLeft.days}</div>
+                    <div className="text-[9px] text-stone-400 uppercase">Ngày</div>
+                  </div>
+                  <span className="text-amber-500 font-bold">:</span>
+                  <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 min-w-[56px]">
+                    <div className="text-base font-bold font-mono text-amber-200">{String(timeLeft.hours).padStart(2, '0')}</div>
+                    <div className="text-[9px] text-stone-400 uppercase">Giờ</div>
+                  </div>
+                  <span className="text-amber-500 font-bold">:</span>
+                  <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 min-w-[56px]">
+                    <div className="text-base font-bold font-mono text-amber-200">{String(timeLeft.minutes).padStart(2, '0')}</div>
+                    <div className="text-[9px] text-stone-400 uppercase">Phút</div>
+                  </div>
+                  <span className="text-amber-500 font-bold">:</span>
+                  <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-amber-500/30 min-w-[56px]">
+                    <div className="text-base font-bold font-mono text-amber-200">{String(timeLeft.seconds).padStart(2, '0')}</div>
+                    <div className="text-[9px] text-stone-400 uppercase">Giây</div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-2xl bg-white p-6 border border-stone-200 text-center shadow-xs">
+            <p className="text-xs font-semibold text-stone-500 italic">
+              Chưa công bố lịch Đại Lễ giỗ tổ tiếp theo. Ban Trị Sự sẽ sớm cập nhật vào lịch tộc.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Thông điệp Trưởng tộc & Ban Quản Lý */}
@@ -471,10 +554,12 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
               </div>
               <div>
                 <h3 className="text-xl font-bold font-serif-clan text-stone-900">
-                  Báo Danh Tham Dự Giỗ Tổ Họ
+                  {featuredEvent ? `Báo Danh: ${featuredEvent.event.title}` : 'Báo Danh Tham Dự Sự Kiện'}
                 </h3>
                 <p className="text-xs text-stone-500">
-                  Đại Lễ Giỗ Tổ Họ {clanInfo.clanSurname} Tộc • Chủ Nhật, 26/04/2026 (10/03 Âm lịch)
+                  {featuredEvent 
+                    ? `${featuredEvent.event.title} • Ngày ${featuredEvent.solarDateStr} (${featuredEvent.event.lunarDate})`
+                    : `Gia tộc ${clanInfo.clanSurname} Tộc`}
                 </p>
               </div>
             </div>
@@ -615,7 +700,7 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
             "{clanInfo.subTitle}" — {clanInfo.ancestralHallLocation}
           </p>
           <div className="pt-3 border-t border-amber-950/80 text-[11px] text-stone-500">
-            © 2026 {clanInfo.clanSurname} Tộc • Hệ Thống Phả Hệ Điện Tử & Quản Trị Tộc Ước
+            © {new Date().getFullYear()} {clanInfo.clanSurname} Tộc • Hệ Thống Phả Hệ Điện Tử & Quản Trị Tộc Ước
           </div>
         </div>
       </footer>

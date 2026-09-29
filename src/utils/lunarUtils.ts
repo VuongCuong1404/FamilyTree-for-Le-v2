@@ -151,10 +151,11 @@ export function convertLunarToSolar(
     };
   } catch (e) {
     console.error('Error converting lunar to solar:', e);
+    const now = new Date();
     return {
-      solarDate: new Date(),
-      formattedSolar: '26/04/2026',
-      daysRemaining: 18,
+      solarDate: now,
+      formattedSolar: `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`,
+      daysRemaining: 0,
     };
   }
 }
@@ -178,29 +179,39 @@ export function parseLunarDateString(str: string): { day: number; month: number 
 /**
  * Calculates upcoming anniversary in current or next year
  */
-export function getUpcomingAnniversaryDate(lunarDateStr: string): {
+export function getUpcomingAnniversaryDate(lunarDateStr: string, baseYear?: number): {
+  solarDate: Date;
   solarDateStr: string;
   daysRemaining: number;
   isPastThisYear: boolean;
   canChiYear: string;
 } {
   const parsed = parseLunarDateString(lunarDateStr);
+  const now = new Date();
+  const currentYear = baseYear || now.getFullYear();
+
   if (!parsed) {
     return {
-      solarDateStr: '26/04/2026',
-      daysRemaining: 18,
+      solarDate: now,
+      solarDateStr: `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${currentYear}`,
+      daysRemaining: 0,
       isPastThisYear: false,
-      canChiYear: 'Bính Ngọ 2026',
+      canChiYear: `${getVietnameseYearCanChi(currentYear)} ${currentYear}`,
     };
   }
 
-  const currentYear = new Date().getFullYear() >= 2026 ? new Date().getFullYear() : 2026;
   const thisYearResult = convertLunarToSolar(currentYear, parsed.month, parsed.day);
 
   if (thisYearResult.daysRemaining >= 0) {
-    const lunar = Lunar.fromYmd(currentYear, parsed.month, parsed.day);
-    const canChi = getVietnameseYearCanChi(currentYear, lunar.getYearGan(), lunar.getYearZhi());
+    let canChi = '';
+    try {
+      const lunar = Lunar.fromYmd(currentYear, parsed.month, parsed.day);
+      canChi = getVietnameseYearCanChi(currentYear, lunar.getYearGan(), lunar.getYearZhi());
+    } catch {
+      canChi = getVietnameseYearCanChi(currentYear);
+    }
     return {
+      solarDate: thisYearResult.solarDate,
       solarDateStr: thisYearResult.formattedSolar,
       daysRemaining: thisYearResult.daysRemaining,
       isPastThisYear: false,
@@ -211,10 +222,16 @@ export function getUpcomingAnniversaryDate(lunarDateStr: string): {
   // Already passed this year -> calculate for next year
   const nextYear = currentYear + 1;
   const nextYearResult = convertLunarToSolar(nextYear, parsed.month, parsed.day);
-  const nextLunar = Lunar.fromYmd(nextYear, parsed.month, parsed.day);
-  const nextCanChi = getVietnameseYearCanChi(nextYear, nextLunar.getYearGan(), nextLunar.getYearZhi());
+  let nextCanChi = '';
+  try {
+    const nextLunar = Lunar.fromYmd(nextYear, parsed.month, parsed.day);
+    nextCanChi = getVietnameseYearCanChi(nextYear, nextLunar.getYearGan(), nextLunar.getYearZhi());
+  } catch {
+    nextCanChi = getVietnameseYearCanChi(nextYear);
+  }
 
   return {
+    solarDate: nextYearResult.solarDate,
     solarDateStr: nextYearResult.formattedSolar,
     daysRemaining: nextYearResult.daysRemaining,
     isPastThisYear: true,
