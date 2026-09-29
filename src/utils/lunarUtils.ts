@@ -102,20 +102,23 @@ export function convertSolarToLunar(solarDate: Date = new Date()): LunarDateInfo
     };
   } catch (err) {
     console.error('Error converting solar to lunar:', err);
-    // Safe fallback thuần Việt
+    const d = solarDate.getDate();
+    const m = solarDate.getMonth() + 1;
+    const y = solarDate.getFullYear();
+    const canChi = getVietnameseYearCanChi(y);
     return {
-      lunarDay: 10,
-      lunarMonth: 3,
-      lunarYear: 2026,
-      lunarMonthName: 'Tháng 3',
-      lunarYearName: 'Bính Ngọ',
-      formattedLunar: '10/03 Âm lịch',
-      formattedFullLunar: 'ngày 10 tháng 3 năm Bính Ngọ',
+      lunarDay: d,
+      lunarMonth: m,
+      lunarYear: y,
+      lunarMonthName: `Tháng ${m}`,
+      lunarYearName: canChi,
+      formattedLunar: `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')} Âm lịch`,
+      formattedFullLunar: `ngày ${d} tháng ${m} năm ${canChi}`,
       isLeapMonth: false,
-      solarDateString: '26/04/2026',
-      solarDay: 26,
-      solarMonth: 4,
-      solarYear: 2026,
+      solarDateString: `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`,
+      solarDay: d,
+      solarMonth: m,
+      solarYear: y,
     };
   }
 }

@@ -8,7 +8,8 @@ import {
   Sparkles, 
   Flame,
   Info,
-  Check
+  Check,
+  Clock
 } from 'lucide-react';
 import { MemorialEvent, ClanMember, ClanInfo } from '../types';
 import { convertLunarToSolar, parseLunarDateString } from '../utils/lunarUtils';
@@ -36,6 +37,8 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
   const [lunarDay, setLunarDay] = useState<number>(10);
   const [lunarMonth, setLunarMonth] = useState<number>(3);
   const [isLeapMonth, setIsLeapMonth] = useState<boolean>(false);
+  const [startTime, setStartTime] = useState('07:30');
+  const [endTime, setEndTime] = useState('13:30');
   const [location, setLocation] = useState('');
   const [hostPerson, setHostPerson] = useState('');
   const [description, setDescription] = useState('');
@@ -63,6 +66,8 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
       setLunarDay(day);
       setLunarMonth(month);
       setIsLeapMonth(Boolean(eventToEdit.isLeapMonth));
+      setStartTime(eventToEdit.startTime || '07:30');
+      setEndTime(eventToEdit.endTime || '13:30');
       setLocation(eventToEdit.location || clanInfo.ancestralHallLocation || 'Từ Đường Gia Tộc');
       setHostPerson(eventToEdit.hostPerson || 'Trưởng Tộc / Trưởng Ban Tế Tự');
       setDescription(eventToEdit.description || '');
@@ -74,6 +79,8 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
       setLunarDay(15);
       setLunarMonth(1);
       setIsLeapMonth(false);
+      setStartTime('07:30');
+      setEndTime('13:30');
       setLocation(clanInfo.ancestralHallLocation || 'Từ Đường Gia Tộc');
       setHostPerson('Trưởng Tộc / Trưởng Ban Tế Tự');
       setDescription('');
@@ -146,6 +153,8 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
       targetPersonName: selectedMember ? selectedMember.fullName : title.trim(),
       generation: selectedMember ? selectedMember.generation : (eventToEdit?.generation || 1),
       branch: selectedMember?.branch || eventToEdit?.branch || 'Toàn tộc',
+      startTime: startTime.trim() || '07:30',
+      endTime: endTime.trim() || '13:30',
       location: location.trim() || 'Từ Đường Gia Tộc',
       hostPerson: hostPerson.trim() || 'Trưởng Tộc',
       role: eventToEdit?.role || 'Ban Trị Sự',
@@ -299,6 +308,35 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
                   ? `Còn ${solarEstimate.daysRemaining} ngày` 
                   : `Đã qua ${Math.abs(solarEstimate.daysRemaining)} ngày`}
               </span>
+            </div>
+
+            {/* Giờ cử hành nghi lễ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block text-stone-700 font-semibold mb-1 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-amber-800" />
+                  <span>Giờ bắt đầu (mặc định 07:30):</span>
+                </label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 text-stone-900 font-semibold focus:outline-none focus:border-amber-700 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-700 font-semibold mb-1 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-amber-800" />
+                  <span>Giờ kết thúc (mặc định 13:30):</span>
+                </label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 text-stone-900 font-semibold focus:outline-none focus:border-amber-700 text-xs"
+                />
+              </div>
             </div>
           </div>
 

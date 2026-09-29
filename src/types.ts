@@ -183,6 +183,8 @@ export interface MemorialEvent {
   description: string;
   ritualNotes?: string;
   isMajorAnniversary?: boolean;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface ClanNewsEvent {

@@ -7,6 +7,7 @@ const LOCAL_STORAGE_MEMBERS = 'clan_members_data';
 const LOCAL_STORAGE_EVENTS = 'clan_memorial_data';
 const LOCAL_STORAGE_PROFILES = 'clan_mock_profiles_data';
 const LOCAL_STORAGE_CLAN_INFO = 'clan_info_data';
+const LOCAL_STORAGE_RSVPS = 'clan_rsvps_data';
 
 /**
  * Helper to check if a string is a valid UUID
@@ -562,6 +563,10 @@ export function mapRowToMemorialEvent(ev: any): MemorialEvent {
     hostPerson: 'Trưởng Tộc / Trưởng Ban Tế Tự',
     role: 'Ban Trị Sự',
     description: ev.description || '',
+    ritualNotes: ev.ritual_notes || ev.ritualNotes || undefined,
+    startTime: ev.start_time || ev.startTime || undefined,
+    endTime: ev.end_time || ev.endTime || undefined,
+    isMajorAnniversary: Boolean(ev.is_major_anniversary ?? ev.isMajorAnniversary),
   };
 }
 
@@ -584,7 +589,7 @@ export function mapMemorialEventToRow(ev: MemorialEvent): any {
 
   const rowId = isUUID(ev.id) ? ev.id : generateUUID();
 
-  return {
+  const row: any = {
     id: rowId,
     title: ev.title.trim(),
     lunar_day: Number(day),
@@ -594,6 +599,15 @@ export function mapMemorialEventToRow(ev: MemorialEvent): any {
     description: ev.description ? ev.description.trim() : null,
     member_id: ev.memberId && isUUID(ev.memberId) ? ev.memberId : null,
   };
+
+  if (ev.startTime) {
+    row.start_time = ev.startTime;
+  }
+  if (ev.endTime) {
+    row.end_time = ev.endTime;
+  }
+
+  return row;
 }
 
 /**
@@ -689,11 +703,26 @@ export async function saveEventService(
 
   try {
     // Nếu !isUUID(event.id) -> tạo crypto.randomUUID(), insert mới (không upsert id mem_*)
-    const query = !isExistingUUID
+    let query = !isExistingUUID
       ? client.from('events').insert(row).select().single()
       : client.from('events').upsert(row, { onConflict: 'id' }).select().single();
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+
+    // Nếu bảng events trên Supabase chưa có cột start_time / end_time, retry mà không gửi 2 cột này
+    if (error && (error.message.includes('start_time') || error.message.includes('end_time') || error.code === 'PGRST204' || error.code === '42703')) {
+      const fallbackRow = { ...row };
+      delete fallbackRow.start_time;
+      delete fallbackRow.end_time;
+      const retryQuery = !isExistingUUID
+        ? client.from('events').insert(fallbackRow).select().single()
+        : client.from('events').upsert(fallbackRow, { onConflict: 'id' }).select().single();
+      const retryRes = await retryQuery;
+      if (!retryRes.error && retryRes.data) {
+        data = retryRes.data;
+        error = null;
+      }
+    }
 
     if (error) {
       console.error('Supabase saveEvent error:', error.message);
@@ -704,7 +733,13 @@ export async function saveEventService(
       };
     }
 
-    const savedEvent = data ? mapRowToMemorialEvent(data) : eventToSave;
+    const mapped = data ? mapRowToMemorialEvent(data) : {};
+    const savedEvent: MemorialEvent = {
+      ...eventToSave,
+      ...mapped,
+      startTime: eventToSave.startTime || (mapped as any).startTime || '07:30',
+      endTime: eventToSave.endTime || (mapped as any).endTime || '13:30',
+    };
 
     // Update local storage backup with real saved record
     try {
@@ -1436,7 +1471,6 @@ export async function updateOwnProfileService(
   }
 }
 
-const LOCAL_STORAGE_RSVPS = 'clan_event_rsvps_data';
 
 /**
  * Save RSVP record to Supabase public.event_rsvps table
@@ -1450,16 +1484,11 @@ export async function saveRsvpService(rsvp: {
   attendee_count: number;
   notes?: string | null;
 }): Promise<{ success: boolean; rsvp?: EventRsvp; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) {
-    return {
-      success: false,
-      error: 'Chưa cấu hình kết nối Supabase. Vui lòng kết nối database trong Cài đặt dòng họ.',
-    };
-  }
+  // Đảm bảo event_id chỉ gửi khi là UUID hợp lệ, tránh lỗi invalid input syntax for type uuid
+  const validEventId = rsvp.event_id && isUUID(rsvp.event_id) ? rsvp.event_id : null;
 
   const payload = {
-    event_id: rsvp.event_id || null,
+    event_id: validEventId,
     event_title: rsvp.event_title?.trim() || null,
     full_name: rsvp.full_name.trim(),
     phone: rsvp.phone?.trim() || null,
@@ -1468,19 +1497,78 @@ export async function saveRsvpService(rsvp: {
     notes: rsvp.notes?.trim() || null,
   };
 
+  const client = getSupabaseClient();
+  if (!client) {
+    // Chế độ offline: lưu vào localStorage
+    const localRsvp: EventRsvp = {
+      id: generateUUID(),
+      event_id: payload.event_id,
+      event_title: payload.event_title,
+      full_name: payload.full_name,
+      phone: payload.phone,
+      branch: payload.branch,
+      attendee_count: payload.attendee_count,
+      notes: payload.notes,
+      created_at: new Date().toISOString(),
+    };
+    try {
+      const local = JSON.parse(localStorage.getItem(LOCAL_STORAGE_RSVPS) || '[]');
+      localStorage.setItem(LOCAL_STORAGE_RSVPS, JSON.stringify([localRsvp, ...local]));
+    } catch {}
+    return { success: true, rsvp: localRsvp };
+  }
+
   try {
-    const { data, error } = await client
+    let { data, error } = await client
       .from('event_rsvps')
       .insert([payload])
       .select()
       .single();
 
+    // Nếu lỗi khóa ngoại foreign key (event_id không tồn tại trong bảng events), thử lại với event_id = null
+    if (error && (error.code === '23503' || error.message.includes('foreign key') || error.message.includes('violates foreign key constraint'))) {
+      const retryRes = await client
+        .from('event_rsvps')
+        .insert([{ ...payload, event_id: null }])
+        .select()
+        .single();
+      if (!retryRes.error && retryRes.data) {
+        data = retryRes.data;
+        error = null;
+      }
+    }
+
     if (error) {
-      console.error('Supabase insert event_rsvps error:', error.message);
-      // Return real error to the user
+      console.error('Supabase insert event_rsvps error:', error.message, error.code);
+      let userFriendlyError = error.message;
+
+      // Nhận diện lỗi thiếu bảng event_rsvps
+      if (error.code === '42P01' || error.message.includes('relation "public.event_rsvps" does not exist') || error.message.includes('event_rsvps')) {
+        userFriendlyError = 'Bảng "event_rsvps" chưa được tạo trong Supabase. Vui lòng mở "Cài đặt dòng họ" > sao chép SQL khởi tạo và chạy trong Supabase SQL Editor.';
+      } else if (error.code === '42501' || error.message.includes('row-level security') || error.message.includes('permission denied')) {
+        userFriendlyError = 'Lỗi phân quyền RLS: Bảng "event_rsvps" chưa có policy cho phép thêm bản ghi (INSERT). Vui lòng thêm policy "event_rsvps_insert_all" trong Supabase.';
+      }
+
+      // Lưu dự phòng vào localStorage để không mất thông tin người dùng nhập
+      try {
+        const fallbackRsvp: EventRsvp = {
+          id: generateUUID(),
+          event_id: payload.event_id,
+          event_title: payload.event_title,
+          full_name: payload.full_name,
+          phone: payload.phone,
+          branch: payload.branch,
+          attendee_count: payload.attendee_count,
+          notes: payload.notes,
+          created_at: new Date().toISOString(),
+        };
+        const local = JSON.parse(localStorage.getItem(LOCAL_STORAGE_RSVPS) || '[]');
+        localStorage.setItem(LOCAL_STORAGE_RSVPS, JSON.stringify([fallbackRsvp, ...local]));
+      } catch {}
+
       return {
         success: false,
-        error: error.message || 'Lỗi lưu thông tin báo danh lên Supabase.',
+        error: userFriendlyError,
       };
     }
 
@@ -1496,7 +1584,7 @@ export async function saveRsvpService(rsvp: {
       created_at: data.created_at,
     };
 
-    // Also update local storage cache
+    // Update local storage cache
     try {
       const local = JSON.parse(localStorage.getItem(LOCAL_STORAGE_RSVPS) || '[]');
       localStorage.setItem(LOCAL_STORAGE_RSVPS, JSON.stringify([newRsvp, ...local]));

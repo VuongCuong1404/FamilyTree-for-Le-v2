@@ -443,6 +443,10 @@ Nam mô A Di Đà Phật! (3 lần, 3 lạy)`
 
                       <div className="pt-2 space-y-1.5 text-xs text-stone-600 border-t border-stone-100">
                         <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span>Thời gian: {event.startTime || '07:30'} - {event.endTime || '13:30'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <MapPin className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                           <span className="truncate">{event.location}</span>
                         </div>

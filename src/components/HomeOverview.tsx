@@ -78,28 +78,62 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
         : memorialEvents;
 
     const now = new Date();
-    const evaluated = candidates.map(ev => {
-      let anniv = getUpcomingAnniversaryDate(ev.lunarDate);
-      let targetDate = new Date(anniv.solarDate);
-      targetDate.setHours(7, 30, 0, 0);
+    const evaluated: Array<{
+      event: MemorialEvent;
+      diffTime: number;
+      targetDate: Date;
+      solarDateStr: string;
+      canChiYear: string;
+      startTimeStr: string;
+      endTimeStr: string;
+    }> = [];
 
-      // Nếu sự kiện năm nay đã qua quá 24h, tính cho năm tiếp theo
-      if (targetDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000) {
-        anniv = getUpcomingAnniversaryDate(ev.lunarDate, now.getFullYear() + 1);
-        targetDate = new Date(anniv.solarDate);
-        targetDate.setHours(7, 30, 0, 0);
+    for (const ev of candidates) {
+      if (!ev || !ev.lunarDate) continue;
+      try {
+        const startTimeStr = ev.startTime && /^\d{1,2}:\d{2}$/.test(ev.startTime.trim())
+          ? ev.startTime.trim()
+          : '07:30';
+        const endTimeStr = ev.endTime && /^\d{1,2}:\d{2}$/.test(ev.endTime.trim())
+          ? ev.endTime.trim()
+          : '13:30';
+
+        const [startH, startM] = startTimeStr.split(':').map(Number);
+        const validH = isNaN(startH) ? 7 : startH;
+        const validM = isNaN(startM) ? 30 : startM;
+
+        let anniv = getUpcomingAnniversaryDate(ev.lunarDate);
+        if (!anniv || !anniv.solarDate || isNaN(anniv.solarDate.getTime())) continue;
+
+        let targetDate = new Date(anniv.solarDate);
+        targetDate.setHours(validH, validM, 0, 0);
+
+        // Nếu sự kiện năm nay đã qua quá 24h, tính cho năm tiếp theo
+        if (targetDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000) {
+          anniv = getUpcomingAnniversaryDate(ev.lunarDate, now.getFullYear() + 1);
+          if (!anniv || !anniv.solarDate || isNaN(anniv.solarDate.getTime())) continue;
+          targetDate = new Date(anniv.solarDate);
+          targetDate.setHours(validH, validM, 0, 0);
+        }
+
+        const diffTime = targetDate.getTime() - now.getTime();
+
+        evaluated.push({
+          event: ev,
+          diffTime,
+          targetDate,
+          solarDateStr: anniv.solarDateStr,
+          canChiYear: anniv.canChiYear,
+          startTimeStr,
+          endTimeStr,
+        });
+      } catch (err) {
+        // Tránh crash khi lunarDate invalid, bỏ qua candidate lỗi parse
+        console.warn('Lỗi tính ngày cho sự kiện giỗ:', ev?.title, err);
       }
+    }
 
-      const diffTime = targetDate.getTime() - now.getTime();
-
-      return {
-        event: ev,
-        diffTime,
-        targetDate,
-        solarDateStr: anniv.solarDateStr,
-        canChiYear: anniv.canChiYear,
-      };
-    });
+    if (evaluated.length === 0) return null;
 
     // Sắp xếp sự kiện sắp diễn ra trước
     evaluated.sort((a, b) => {
@@ -164,7 +198,8 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
   const handleShareInvite = () => {
     if (!featuredEvent) return;
     const locationStr = featuredEvent.event.location || clanInfo.ancestralHallLocation;
-    const inviteText = `TRÂN TRỌNG KÍNH MỜI CON CHÁU HỌ ${clanInfo.clanSurname.toUpperCase()} TỘC\nTham dự: ${featuredEvent.event.title.toUpperCase()}\n• Âm lịch: ${featuredEvent.event.lunarDate} (${featuredEvent.canChiYear})\n• Dương lịch: Ngày ${featuredEvent.solarDateStr} (07:30 - 13:30)\n• Địa điểm: ${locationStr}\nKính mong toàn thể bà con nội ngoại sắp xếp thời gian tề tựu đông đủ để thắp nén tâm hương tưởng nhớ tiên tổ!`;
+    const timeDisplay = `${featuredEvent.startTimeStr} - ${featuredEvent.endTimeStr}`;
+    const inviteText = `TRÂN TRỌNG KÍNH MỜI CON CHÁU HỌ ${clanInfo.clanSurname.toUpperCase()} TỘC\nTham dự: ${featuredEvent.event.title.toUpperCase()}\n• Âm lịch: ${featuredEvent.event.lunarDate} (${featuredEvent.canChiYear})\n• Dương lịch: Ngày ${featuredEvent.solarDateStr} (${timeDisplay})\n• Địa điểm: ${locationStr}\nKính mong toàn thể bà con nội ngoại sắp xếp thời gian tề tựu đông đủ để thắp nén tâm hương tưởng nhớ tiên tổ!`;
     navigator.clipboard.writeText(inviteText);
     setCopiedInvite(true);
     setTimeout(() => setCopiedInvite(false), 3000);
@@ -190,6 +225,7 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
 
     try {
       const res = await saveRsvpService({
+        event_id: featuredEvent?.event?.id,
         event_title: eventTitle,
         full_name: rsvpName.trim(),
         phone: rsvpPhone.trim() || undefined,
@@ -422,7 +458,9 @@ export const HomeOverview: React.FC<HomeOverviewProps> = ({
                   <Clock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                   <div>
                     <div className="text-xs text-stone-400">Thời gian:</div>
-                    <div className="text-sm font-bold text-amber-100">07:30 - 13:30 • Ngày {featuredEvent.solarDateStr}</div>
+                    <div className="text-sm font-bold text-amber-100">
+                      {featuredEvent.startTimeStr} - {featuredEvent.endTimeStr} • Ngày {featuredEvent.solarDateStr}
+                    </div>
                   </div>
                 </div>
 
