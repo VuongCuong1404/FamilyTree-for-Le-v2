@@ -1211,7 +1211,7 @@ export const INITIAL_MEMBERS: ClanMember[] = [
 
 export const INITIAL_MEMORIAL_EVENTS: MemorialEvent[] = [
   {
-    id: "mem_1",
+    id: "00000000-0000-4000-a000-000000000001",
     title: "Đại Lễ Giỗ Cụ Thủy Tổ Lê Khắc Mạn (Giỗ Họ Toàn Tộc)",
     lunarDate: "10/03 Âm lịch",
     solarDateEstimated: "26/04/2026",
@@ -1226,7 +1226,7 @@ export const INITIAL_MEMORIAL_EVENTS: MemorialEvent[] = [
     isMajorAnniversary: true
   },
   {
-    id: "mem_2",
+    id: "00000000-0000-4000-a000-000000000002",
     title: "Lễ Giỗ Cụ Bà Thủy Tổ Nguyễn Thị Diệu",
     lunarDate: "18/07 Âm lịch",
     solarDateEstimated: "29/08/2026",
@@ -1239,7 +1239,7 @@ export const INITIAL_MEMORIAL_EVENTS: MemorialEvent[] = [
     description: "Ngày kỵ nhật Cụ Bà Khởi Nghiệp, con cháu dâng lễ chay và mâm quả cúng tạ ơn đức sinh thành."
   },
   {
-    id: "mem_3",
+    id: "00000000-0000-4000-a000-000000000003",
     title: "Lễ Giỗ Cụ Trưởng Chi Đời 2 Lê Khắc Trợ",
     lunarDate: "15/05 Âm lịch",
     solarDateEstimated: "19/06/2026",
@@ -1252,7 +1252,7 @@ export const INITIAL_MEMORIAL_EVENTS: MemorialEvent[] = [
     description: "Giỗ cụ Trưởng Chi Đời 2, họp mặt con cháu Chi Trưởng để bàn việc tu bổ phòng thờ chi họ."
   },
   {
-    id: "mem_4",
+    id: "00000000-0000-4000-a000-000000000004",
     title: "Lễ Giỗ Cụ Chi Đệ Nhị Lê Khắc Nhuận",
     lunarDate: "20/08 Âm lịch",
     solarDateEstimated: "30/09/2026",
@@ -1265,7 +1265,7 @@ export const INITIAL_MEMORIAL_EVENTS: MemorialEvent[] = [
     description: "Ngày kỵ nhật Cụ Chi Hai, con cháu Chi 2 ở Hà Nội và các tỉnh về dâng hương."
   },
   {
-    id: "mem_5",
+    id: "00000000-0000-4000-a000-000000000005",
     title: "Lễ Giỗ Cụ Chi Đệ Tam Lê Khắc Hối",
     lunarDate: "06/02 Âm lịch",
     solarDateEstimated: "24/03/2026",

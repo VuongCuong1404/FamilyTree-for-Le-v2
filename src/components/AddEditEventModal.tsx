@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { MemorialEvent, ClanMember, ClanInfo } from '../types';
 import { convertLunarToSolar, parseLunarDateString } from '../utils/lunarUtils';
+import { generateUUID } from '../services/supabaseService';
 
 interface AddEditEventModalProps {
   isOpen: boolean;
@@ -129,8 +130,12 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
     const lunarDateStr = `${String(lunarDay).padStart(2, '0')}/${String(lunarMonth).padStart(2, '0')}${isLeapMonth ? ' (Nhuận)' : ''} Âm lịch`;
     const selectedMember = members.find((m) => m.id === memberId);
 
+    const eventId = eventToEdit 
+      ? eventToEdit.id 
+      : (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : generateUUID());
+
     const newEvent: MemorialEvent = {
-      id: eventToEdit ? eventToEdit.id : `ev_${Date.now()}`,
+      id: eventId,
       memberId: memberId || null,
       title: title.trim(),
       lunarDay,

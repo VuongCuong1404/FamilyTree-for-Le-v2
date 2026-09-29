@@ -88,7 +88,9 @@ export default function App() {
       if (membersRes.members) {
         setMembers(membersRes.members);
       }
-      if (eventsRes.events && eventsRes.events.length > 0) {
+      if (eventsRes.isFromSupabase) {
+        setMemorialEvents(eventsRes.events || []);
+      } else if (eventsRes.events && eventsRes.events.length > 0) {
         setMemorialEvents(eventsRes.events);
       }
       if (clanInfoRes.clanInfo) {

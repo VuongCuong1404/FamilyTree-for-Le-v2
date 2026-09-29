@@ -13,7 +13,7 @@ const LOCAL_STORAGE_CLAN_INFO = 'clan_info_data';
  */
 export function isUUID(str?: string | null): boolean {
   if (!str) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
 /**
@@ -610,12 +610,13 @@ export async function fetchEventsService(): Promise<{ events: MemorialEvent[]; i
         .order('lunar_month', { ascending: true })
         .order('lunar_day', { ascending: true });
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         const mapped = data.map(mapRowToMemorialEvent);
         // Backup to localStorage
         try {
           localStorage.setItem(LOCAL_STORAGE_EVENTS, JSON.stringify(mapped));
         } catch {}
+        // Nếu đã lấy được từ Supabase thì không merge INITIAL_MEMORIAL_EVENTS có id mem_*
         return { events: mapped, isFromSupabase: true };
       } else if (error) {
         console.warn('Supabase events fetch error:', error.message);
@@ -654,39 +655,61 @@ export async function saveEventService(
     };
   }
 
+  const isExistingUUID = isUUID(event.id);
+  // Nếu !isUUID(event.id) (dạng mem_* hoặc ID tạm): tạo UUID mới bằng generateUUID() (dùng crypto.randomUUID)
+  const targetId = isExistingUUID ? event.id : generateUUID();
+  const eventToSave: MemorialEvent = {
+    ...event,
+    id: targetId,
+  };
+
   const client = getSupabaseClient();
   if (!client) {
-    return {
-      success: false,
-      event,
-      error: 'Chưa kết nối được Supabase. Vui lòng kiểm tra cấu hình kết nối database.',
-    };
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_EVENTS);
+      let list: MemorialEvent[] = saved ? JSON.parse(saved) : INITIAL_MEMORIAL_EVENTS;
+      const idx = list.findIndex(e => e.id === targetId || e.id === event.id);
+      if (idx >= 0) {
+        list[idx] = eventToSave;
+      } else {
+        list.push(eventToSave);
+      }
+      localStorage.setItem(LOCAL_STORAGE_EVENTS, JSON.stringify(list));
+      return { success: true, event: eventToSave };
+    } catch (e: any) {
+      return {
+        success: false,
+        event: eventToSave,
+        error: e.message || 'Lỗi lưu ngày giỗ vào bộ nhớ cục bộ.',
+      };
+    }
   }
 
-  const row = mapMemorialEventToRow(event);
+  const row = mapMemorialEventToRow(eventToSave);
 
   try {
-    const { data, error } = await client
-      .from('events')
-      .upsert(row, { onConflict: 'id' })
-      .select()
-      .single();
+    // Nếu !isUUID(event.id) -> tạo crypto.randomUUID(), insert mới (không upsert id mem_*)
+    const query = !isExistingUUID
+      ? client.from('events').insert(row).select().single()
+      : client.from('events').upsert(row, { onConflict: 'id' }).select().single();
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Supabase saveEvent error:', error.message);
       return {
         success: false,
-        event,
+        event: eventToSave,
         error: error.message || 'Lỗi lưu ngày giỗ lên Supabase. Vui lòng kiểm tra quyền RLS.',
       };
     }
 
-    const savedEvent = data ? mapRowToMemorialEvent(data) : event;
+    const savedEvent = data ? mapRowToMemorialEvent(data) : eventToSave;
 
     // Update local storage backup with real saved record
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_EVENTS);
-      let list: MemorialEvent[] = saved ? JSON.parse(saved) : INITIAL_MEMORIAL_EVENTS;
+      let list: MemorialEvent[] = saved ? JSON.parse(saved) : [];
       const idx = list.findIndex(e => e.id === savedEvent.id || e.id === event.id);
       if (idx >= 0) {
         list[idx] = savedEvent;
@@ -703,7 +726,7 @@ export async function saveEventService(
     console.error('Supabase saveEvent exception:', e.message);
     return {
       success: false,
-      event,
+      event: eventToSave,
       error: e.message || 'Lỗi kết nối Supabase.',
     };
   }
@@ -724,12 +747,32 @@ export async function deleteEventService(
     };
   }
 
+  // Nếu !isUUID(eventId) -> chỉ xóa localStorage/state, return success; không .delete() Supabase với id invalid
+  if (!isUUID(eventId)) {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_EVENTS);
+      if (saved) {
+        let list: MemorialEvent[] = JSON.parse(saved);
+        list = list.filter(e => e.id !== eventId);
+        localStorage.setItem(LOCAL_STORAGE_EVENTS, JSON.stringify(list));
+      }
+    } catch (e) {
+      console.error('Lỗi xóa sự kiện demo khỏi localStorage:', e);
+    }
+    return { success: true };
+  }
+
   const client = getSupabaseClient();
   if (!client) {
-    return {
-      success: false,
-      error: 'Chưa kết nối được Supabase. Vui lòng kiểm tra cấu hình kết nối database.',
-    };
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_EVENTS);
+      let list: MemorialEvent[] = saved ? JSON.parse(saved) : INITIAL_MEMORIAL_EVENTS;
+      list = list.filter(e => e.id !== eventId);
+      localStorage.setItem(LOCAL_STORAGE_EVENTS, JSON.stringify(list));
+    } catch (e) {
+      console.error(e);
+    }
+    return { success: true };
   }
 
   try {
@@ -749,7 +792,7 @@ export async function deleteEventService(
     // Update local storage
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_EVENTS);
-      let list: MemorialEvent[] = saved ? JSON.parse(saved) : INITIAL_MEMORIAL_EVENTS;
+      let list: MemorialEvent[] = saved ? JSON.parse(saved) : [];
       list = list.filter(e => e.id !== eventId);
       localStorage.setItem(LOCAL_STORAGE_EVENTS, JSON.stringify(list));
     } catch (e) {
